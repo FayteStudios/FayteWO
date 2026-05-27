@@ -10,6 +10,8 @@ public sealed class ClientSession
 
     public Guid? PlayerId { get; private set; }
 
+    public Guid SessionId { get; } = Guid.NewGuid();
+
     public bool IsLoggedIn => PlayerId is not null;
 
     public ClientSession(TcpClient client, Func<ClientSession, string, string> packetHandler)
@@ -49,11 +51,11 @@ public sealed class ClientSession
                 }
 
                 Console.WriteLine();
-                Console.WriteLine($"Received raw packet: {incomingJson}");
+                Console.WriteLine($"Session {SessionId}: Received raw packet: {incomingJson}");
 
                 string responseJson = _packetHandler(this, incomingJson);
 
-                Console.WriteLine($"Sending response: {responseJson}");
+                Console.WriteLine($"Session {SessionId}: Sending response: {responseJson}");
                 writer.WriteLine(responseJson);
             }
         }
