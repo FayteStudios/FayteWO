@@ -1,8 +1,13 @@
-﻿using FayteWO.Server.Systems;
+﻿using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using FayteWO.Server.Systems;
 using FayteWO.Shared.Entities;
 using FayteWO.Shared.Networking;
 using FayteWO.Shared.Networking.Packets;
 using FayteWO.Shared.World;
+
+const int port = 7777;
 
 Console.WriteLine("FayteWO Server Starting...");
 
@@ -23,6 +28,7 @@ Chunk chunk10 = CreateFilledChunk(1, 0, grass.TileId);
 worldMap.AddChunk(chunk00);
 worldMap.AddChunk(chunk10);
 
+// Block movement at world position 33,0.
 worldMap.TrySetTileId(new TilePosition(33, 0, 0), wall.TileId);
 
 PlayerState player = new PlayerState(
@@ -33,34 +39,43 @@ PlayerState player = new PlayerState(
 MovementSystem movementSystem = new MovementSystem(worldMap, tileDefinitions);
 
 Console.WriteLine($"Spawned player: {player}");
+Console.WriteLine($"Listening on 127.0.0.1:{port}");
+Console.WriteLine("Start the FayteWO.Client project in another terminal.");
 
-ChunkDataPacket chunkPacket = new ChunkDataPacket(
-    new ChunkPosition(chunk00.ChunkX, chunk00.ChunkY, chunk00.ChunkZ),
-    Chunk.Size,
-    chunk00.Height,
-    chunk00.ToFlatTileIdArray());
+TcpListener listener = new TcpListener(IPAddress.Loopback, port);
+listener.Start();
 
-string serializedChunkPacket = PacketSerializer.Serialize(PacketType.ChunkData, chunkPacket);
+while (true)
+{
+    using TcpClient client = listener.AcceptTcpClient();
 
-Console.WriteLine();
-Console.WriteLine("Serialized ChunkDataPacket:");
-Console.WriteLine(serializedChunkPacket[..Math.Min(serializedChunkPacket.Length, 160)] + "...");
+    Console.WriteLine();
+    Console.WriteLine("Client connected.");
 
-HandleRawPacket(PacketSerializer.Serialize(
-    PacketType.MoveRequest,
-    new MoveRequestPacket(player.PlayerId, Direction.East)));
+    using NetworkStream stream = client.GetStream();
+    using StreamReader reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+    using StreamWriter writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true)
+    {
+        AutoFlush = true
+    };
 
-HandleRawPacket(PacketSerializer.Serialize(
-    PacketType.MoveRequest,
-    new MoveRequestPacket(player.PlayerId, Direction.East)));
+    string? incomingJson = reader.ReadLine();
 
-HandleRawPacket(PacketSerializer.Serialize(
-    PacketType.MoveRequest,
-    new MoveRequestPacket(player.PlayerId, Direction.East)));
+    if (string.IsNullOrWhiteSpace(incomingJson))
+    {
+        Console.WriteLine("Received empty packet.");
+        continue;
+    }
 
-Console.WriteLine();
-Console.WriteLine($"Final player state: {player}");
-Console.WriteLine("Server test complete.");
+    Console.WriteLine($"Received raw packet: {incomingJson}");
+
+    string responseJson = HandleRawPacket(incomingJson);
+
+    Console.WriteLine($"Sending response: {responseJson}");
+    writer.WriteLine(responseJson);
+
+    Console.WriteLine("Client disconnected.");
+}
 
 Chunk CreateFilledChunk(int chunkX, int chunkY, int tileId)
 {
@@ -77,34 +92,39 @@ Chunk CreateFilledChunk(int chunkX, int chunkY, int tileId)
     return chunk;
 }
 
-void HandleRawPacket(string json)
+string HandleRawPacket(string json)
 {
-    Console.WriteLine();
-    Console.WriteLine($"Received raw packet: {json}");
-
-    NetworkPacket packet = PacketSerializer.DeserializeEnvelope(json);
-
-    switch (packet.Type)
+    try
     {
-        case PacketType.MoveRequest:
-            MoveRequestPacket moveRequest = PacketSerializer.DeserializePayload<MoveRequestPacket>(packet);
-            HandleMoveRequest(moveRequest);
-            break;
+        NetworkPacket packet = PacketSerializer.DeserializeEnvelope(json);
 
-        default:
-            Console.WriteLine($"Unhandled packet type: {packet.Type}");
-            break;
+        return packet.Type switch
+        {
+            PacketType.MoveRequest => HandleMoveRequest(
+                PacketSerializer.DeserializePayload<MoveRequestPacket>(packet)),
+
+            _ => PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Unhandled packet type: {packet.Type}"))
+        };
+    }
+    catch (Exception ex)
+    {
+        return PacketSerializer.Serialize(
+            PacketType.ServerMessage,
+            new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
     }
 }
 
-void HandleMoveRequest(MoveRequestPacket packet)
+string HandleMoveRequest(MoveRequestPacket packet)
 {
     Console.WriteLine($"Decoded MoveRequest: Player={packet.PlayerId}, Direction={packet.Direction}");
 
     if (packet.PlayerId != player.PlayerId)
     {
-        Console.WriteLine("Move rejected: unknown player.");
-        return;
+        return PacketSerializer.Serialize(
+            PacketType.ServerMessage,
+            new ServerMessagePacket("Move rejected: unknown player."));
     }
 
     TilePosition fromPosition = player.Position;
@@ -113,10 +133,13 @@ void HandleMoveRequest(MoveRequestPacket packet)
 
     Console.WriteLine(moved ? "Move accepted." : "Move rejected.");
     Console.WriteLine(reason);
+    Console.WriteLine($"Player position: {player.Position}");
 
     if (!moved)
     {
-        return;
+        return PacketSerializer.Serialize(
+            PacketType.ServerMessage,
+            new ServerMessagePacket(reason));
     }
 
     EntityMovedPacket movedPacket = new EntityMovedPacket(
@@ -125,7 +148,5 @@ void HandleMoveRequest(MoveRequestPacket packet)
         player.Position,
         packet.Direction);
 
-    string outgoingJson = PacketSerializer.Serialize(PacketType.EntityMoved, movedPacket);
-
-    Console.WriteLine($"Outgoing packet: {outgoingJson}");
+    return PacketSerializer.Serialize(PacketType.EntityMoved, movedPacket);
 }
