@@ -12,5 +12,6 @@ public enum PacketType
     LoginResult = 200,
     EntityMoved = 201,
     ChunkData = 202,
-    ServerMessage = 203
+    ServerMessage = 203,
+    PlayerState = 204
 }
