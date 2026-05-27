@@ -95,6 +95,62 @@ public sealed class Chunk
         }
     }
 
+    public int[] ToFlatTileIdArray()
+    {
+        int[] tileIds = new int[Size * Size * Height];
+
+        int index = 0;
+
+        for (int z = 0; z < Height; z++)
+        {
+            for (int y = 0; y < Size; y++)
+            {
+                for (int x = 0; x < Size; x++)
+                {
+                    tileIds[index] = _tileIds[x, y, z];
+                    index++;
+                }
+            }
+        }
+
+        return tileIds;
+    }
+
+    public void LoadFromFlatTileIdArray(int[] tileIds)
+    {
+        int expectedLength = Size * Size * Height;
+
+        if (tileIds.Length != expectedLength)
+        {
+            throw new ArgumentException(
+                $"Expected {expectedLength} tile IDs, but received {tileIds.Length}.",
+                nameof(tileIds));
+        }
+
+        int index = 0;
+
+        for (int z = 0; z < Height; z++)
+        {
+            for (int y = 0; y < Size; y++)
+            {
+                for (int x = 0; x < Size; x++)
+                {
+                    int tileId = tileIds[index];
+
+                    if (tileId < 0)
+                    {
+                        throw new ArgumentOutOfRangeException(
+                            nameof(tileIds),
+                            $"Tile ID cannot be negative. Invalid value {tileId} at flat index {index}.");
+                    }
+
+                    _tileIds[x, y, z] = tileId;
+                    index++;
+                }
+            }
+        }
+    }
+
     public override string ToString()
     {
         return $"Chunk ({ChunkX}, {ChunkY}, {ChunkZ})";

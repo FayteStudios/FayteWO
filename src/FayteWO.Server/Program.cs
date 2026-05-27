@@ -1,5 +1,6 @@
 ﻿using FayteWO.Server.Systems;
 using FayteWO.Shared.Entities;
+using FayteWO.Shared.Networking.Packets;
 using FayteWO.Shared.World;
 
 Console.WriteLine("FayteWO Server Starting...");
@@ -21,10 +22,6 @@ Chunk chunk10 = CreateFilledChunk(1, 0, grass.TileId);
 worldMap.AddChunk(chunk00);
 worldMap.AddChunk(chunk10);
 
-// Put a wall at world position 2,0.
-worldMap.TrySetTileId(new TilePosition(2, 0, 0), wall.TileId);
-
-// Put a wall across the chunk boundary at world position 33,0.
 worldMap.TrySetTileId(new TilePosition(33, 0, 0), wall.TileId);
 
 PlayerState player = new PlayerState(
@@ -36,10 +33,19 @@ MovementSystem movementSystem = new MovementSystem(worldMap, tileDefinitions);
 
 Console.WriteLine($"Spawned player: {player}");
 
-TryMoveAndPrint(Direction.East); // 31,0
-TryMoveAndPrint(Direction.East); // 32,0, crosses into chunk 1,0
-TryMoveAndPrint(Direction.East); // 33,0, blocked by wall
-TryMoveAndPrint(Direction.West); // 31,0
+ChunkDataPacket chunkPacket = new ChunkDataPacket(
+    new ChunkPosition(chunk00.ChunkX, chunk00.ChunkY, chunk00.ChunkZ),
+    Chunk.Size,
+    chunk00.Height,
+    chunk00.ToFlatTileIdArray());
+
+Console.WriteLine();
+Console.WriteLine($"Created chunk packet for chunk {chunkPacket.ChunkPosition}");
+Console.WriteLine($"Chunk packet contains {chunkPacket.TileIds.Length} tile IDs.");
+
+HandleMoveRequest(new MoveRequestPacket(player.PlayerId, Direction.East));
+HandleMoveRequest(new MoveRequestPacket(player.PlayerId, Direction.East));
+HandleMoveRequest(new MoveRequestPacket(player.PlayerId, Direction.East));
 
 Console.WriteLine();
 Console.WriteLine($"Final player state: {player}");
@@ -60,14 +66,35 @@ Chunk CreateFilledChunk(int chunkX, int chunkY, int tileId)
     return chunk;
 }
 
-void TryMoveAndPrint(Direction direction)
+void HandleMoveRequest(MoveRequestPacket packet)
 {
     Console.WriteLine();
-    Console.WriteLine($"Trying to move {direction}...");
+    Console.WriteLine($"Received MoveRequest: Player={packet.PlayerId}, Direction={packet.Direction}");
 
-    bool moved = movementSystem.TryMove(player, direction, out string reason);
+    if (packet.PlayerId != player.PlayerId)
+    {
+        Console.WriteLine("Move rejected: unknown player.");
+        return;
+    }
+
+    TilePosition fromPosition = player.Position;
+
+    bool moved = movementSystem.TryMove(player, packet.Direction, out string reason);
 
     Console.WriteLine(moved ? "Move accepted." : "Move rejected.");
     Console.WriteLine(reason);
-    Console.WriteLine($"Player position: {player.Position}");
+
+    if (!moved)
+    {
+        return;
+    }
+
+    EntityMovedPacket movedPacket = new EntityMovedPacket(
+        player.PlayerId,
+        fromPosition,
+        player.Position,
+        packet.Direction);
+
+    Console.WriteLine(
+        $"Created EntityMovedPacket: Entity={movedPacket.EntityId}, From={movedPacket.FromPosition}, To={movedPacket.ToPosition}");
 }
