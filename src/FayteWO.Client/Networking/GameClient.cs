@@ -168,7 +168,7 @@ public sealed class GameClient
     {
         EntityMovedPacket moved = PacketSerializer.DeserializePayload<EntityMovedPacket>(responsePacket);
 
-        Console.WriteLine($"Entity moved from {moved.FromPosition} to {moved.ToPosition}");
+    Console.WriteLine($"Entity {moved.EntityId} moved from {moved.FromPosition} to {moved.ToPosition}");
 
         if (PlayerId == moved.EntityId)
         {

@@ -6,15 +6,19 @@ namespace FayteWO.Server.Networking;
 public sealed class ClientSession
 {
     private readonly TcpClient _client;
-    private readonly Func<ClientSession, string, string> _packetHandler;
+    private readonly Func<ClientSession, string, string?> _packetHandler;
 
-    public Guid? PlayerId { get; private set; }
+  
+    private readonly object _sendLock = new();
+
+    private StreamWriter? _writer;
 
     public Guid SessionId { get; } = Guid.NewGuid();
+    public Guid? PlayerId { get; private set; }
 
     public bool IsLoggedIn => PlayerId is not null;
 
-    public ClientSession(TcpClient client, Func<ClientSession, string, string> packetHandler)
+    public ClientSession(TcpClient client, Func<ClientSession, string, string?> packetHandler)
     {
         _client = client;
         _packetHandler = packetHandler;
@@ -35,6 +39,8 @@ public sealed class ClientSession
             AutoFlush = true
         })
         {
+            _writer = writer;
+
             while (true)
             {
                 string? incomingJson = reader.ReadLine();
@@ -46,18 +52,34 @@ public sealed class ClientSession
 
                 if (string.IsNullOrWhiteSpace(incomingJson))
                 {
-                    Console.WriteLine("Received empty packet.");
+                    Console.WriteLine($"Session {SessionId}: Received empty packet.");
                     continue;
                 }
 
                 Console.WriteLine();
                 Console.WriteLine($"Session {SessionId}: Received raw packet: {incomingJson}");
 
-                string responseJson = _packetHandler(this, incomingJson);
+                string? responseJson = _packetHandler(this, incomingJson);
 
-                Console.WriteLine($"Session {SessionId}: Sending response: {responseJson}");
-                writer.WriteLine(responseJson);
+                if (!string.IsNullOrWhiteSpace(responseJson))
+                {
+                    SendRaw(responseJson);
+                }
             }
+        }
+    }
+
+    public void SendRaw(string json)
+    {
+        if (_writer is null)
+        {
+            return;
+        }
+
+        lock (_sendLock)
+        {
+            Console.WriteLine($"Session {SessionId}: Sending packet: {json}");
+            _writer.WriteLine(json);
         }
     }
 }

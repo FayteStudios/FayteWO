@@ -15,7 +15,7 @@ public sealed class GameServer
     private readonly WorldMap _worldMap;
     private readonly MovementSystem _movementSystem;
     private readonly ConcurrentDictionary<Guid, PlayerState> _players = new();
-
+    private readonly ConcurrentDictionary<Guid, ClientSession> _sessions = new();
     private TcpListener? _listener;
 
     public GameServer(int port)
@@ -63,25 +63,38 @@ public sealed class GameServer
 }
 
     private void HandleClient(TcpClient client)
-{
-    Console.WriteLine();
-    Console.WriteLine("Client connected.");
+    {
+        ClientSession? session = null;
 
-    try
-    {
-        ClientSession session = new ClientSession(client, HandleRawPacket);
-        session.Run();
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Client session crashed: {ex.Message}");
-    }
-    finally
-    {
-        Console.WriteLine("Client disconnected.");
-    }
-}
-    private string HandleRawPacket(ClientSession session, string json)
+        try
+        {
+            session = new ClientSession(client, HandleRawPacket);
+
+            _sessions[session.SessionId] = session;
+
+            Console.WriteLine();
+            Console.WriteLine($"Session {session.SessionId}: Client connected.");
+
+            session.Run();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Client session crashed: {ex.Message}");
+        }
+        finally
+        {
+            if (session is not null)
+            {
+                _sessions.TryRemove(session.SessionId, out _);
+                Console.WriteLine($"Session {session.SessionId}: Client disconnected.");
+            }
+            else
+            {
+                Console.WriteLine("Client disconnected before session was created.");
+            }
+        }
+    }   
+    private string? HandleRawPacket(ClientSession session, string json)
     {
         try
         {
@@ -108,7 +121,7 @@ public sealed class GameServer
                 PacketType.ServerMessage,
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
-    }
+    }    
     private string HandleLoginRequest(ClientSession session, LoginRequestPacket packet)
     {
         Console.WriteLine($"Session {session.SessionId}: Decoded LoginRequest: Username={packet.Username}");
@@ -158,7 +171,7 @@ public sealed class GameServer
         return PacketSerializer.Serialize(PacketType.LoginResult, successfulLogin);
     }
 
-    private string HandleMoveRequest(ClientSession session, MoveRequestPacket packet)
+    private string? HandleMoveRequest(ClientSession session, MoveRequestPacket packet)
     {
         Console.WriteLine($"Session {session.SessionId}: Decoded MoveRequest: Player={session.PlayerId}, Direction={packet.Direction}");
 
@@ -197,7 +210,11 @@ public sealed class GameServer
             player.Position,
             packet.Direction);
 
-        return PacketSerializer.Serialize(PacketType.EntityMoved, movedPacket);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.EntityMoved, movedPacket);
+
+        BroadcastToLoggedInSessions(outgoingJson);
+
+        return null;
     }
     private static Chunk CreateFilledChunk(int chunkX, int chunkY, int tileId)
     {
@@ -212,5 +229,18 @@ public sealed class GameServer
         }
 
         return chunk;
+    }
+
+    private void BroadcastToLoggedInSessions(string json)
+    {
+        foreach (ClientSession session in _sessions.Values)
+        {
+            if (!session.IsLoggedIn)
+            {
+                continue;
+            }
+
+            session.SendRaw(json);
+        }
     }
 }
