@@ -1,5 +1,6 @@
 ﻿using FayteWO.Server.Systems;
 using FayteWO.Shared.Entities;
+using FayteWO.Shared.Networking;
 using FayteWO.Shared.Networking.Packets;
 using FayteWO.Shared.World;
 
@@ -39,13 +40,23 @@ ChunkDataPacket chunkPacket = new ChunkDataPacket(
     chunk00.Height,
     chunk00.ToFlatTileIdArray());
 
-Console.WriteLine();
-Console.WriteLine($"Created chunk packet for chunk {chunkPacket.ChunkPosition}");
-Console.WriteLine($"Chunk packet contains {chunkPacket.TileIds.Length} tile IDs.");
+string serializedChunkPacket = PacketSerializer.Serialize(PacketType.ChunkData, chunkPacket);
 
-HandleMoveRequest(new MoveRequestPacket(player.PlayerId, Direction.East));
-HandleMoveRequest(new MoveRequestPacket(player.PlayerId, Direction.East));
-HandleMoveRequest(new MoveRequestPacket(player.PlayerId, Direction.East));
+Console.WriteLine();
+Console.WriteLine("Serialized ChunkDataPacket:");
+Console.WriteLine(serializedChunkPacket[..Math.Min(serializedChunkPacket.Length, 160)] + "...");
+
+HandleRawPacket(PacketSerializer.Serialize(
+    PacketType.MoveRequest,
+    new MoveRequestPacket(player.PlayerId, Direction.East)));
+
+HandleRawPacket(PacketSerializer.Serialize(
+    PacketType.MoveRequest,
+    new MoveRequestPacket(player.PlayerId, Direction.East)));
+
+HandleRawPacket(PacketSerializer.Serialize(
+    PacketType.MoveRequest,
+    new MoveRequestPacket(player.PlayerId, Direction.East)));
 
 Console.WriteLine();
 Console.WriteLine($"Final player state: {player}");
@@ -66,10 +77,29 @@ Chunk CreateFilledChunk(int chunkX, int chunkY, int tileId)
     return chunk;
 }
 
-void HandleMoveRequest(MoveRequestPacket packet)
+void HandleRawPacket(string json)
 {
     Console.WriteLine();
-    Console.WriteLine($"Received MoveRequest: Player={packet.PlayerId}, Direction={packet.Direction}");
+    Console.WriteLine($"Received raw packet: {json}");
+
+    NetworkPacket packet = PacketSerializer.DeserializeEnvelope(json);
+
+    switch (packet.Type)
+    {
+        case PacketType.MoveRequest:
+            MoveRequestPacket moveRequest = PacketSerializer.DeserializePayload<MoveRequestPacket>(packet);
+            HandleMoveRequest(moveRequest);
+            break;
+
+        default:
+            Console.WriteLine($"Unhandled packet type: {packet.Type}");
+            break;
+    }
+}
+
+void HandleMoveRequest(MoveRequestPacket packet)
+{
+    Console.WriteLine($"Decoded MoveRequest: Player={packet.PlayerId}, Direction={packet.Direction}");
 
     if (packet.PlayerId != player.PlayerId)
     {
@@ -95,6 +125,7 @@ void HandleMoveRequest(MoveRequestPacket packet)
         player.Position,
         packet.Direction);
 
-    Console.WriteLine(
-        $"Created EntityMovedPacket: Entity={movedPacket.EntityId}, From={movedPacket.FromPosition}, To={movedPacket.ToPosition}");
+    string outgoingJson = PacketSerializer.Serialize(PacketType.EntityMoved, movedPacket);
+
+    Console.WriteLine($"Outgoing packet: {outgoingJson}");
 }
