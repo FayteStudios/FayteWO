@@ -11,13 +11,13 @@ GameClient client = new GameClient(host, port);
 try
 {
     client.Connect();
+    client.Login("TestPlayer", "password");
 
-    bool loggedIn = client.Login("TestPlayer", "password");
+    Console.WriteLine("Waiting for login response...");
 
-    if (!loggedIn)
+    while (client.PlayerId is null)
     {
-        Console.WriteLine("Login failed. Client shutting down.");
-        return;
+        Thread.Sleep(50);
     }
 
     PrintHelp();

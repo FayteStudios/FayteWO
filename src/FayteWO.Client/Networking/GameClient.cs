@@ -10,10 +10,13 @@ public sealed class GameClient
 {
     private readonly string _host;
     private readonly int _port;
+    private readonly object _sendLock = new();
 
     private TcpClient? _client;
     private StreamReader? _reader;
     private StreamWriter? _writer;
+    private Thread? _receiveThread;
+    private bool _isRunning;
 
     public Guid? PlayerId { get; private set; }
     public TilePosition? Position { get; private set; }
@@ -44,11 +47,32 @@ public sealed class GameClient
             AutoFlush = true
         };
 
+        _isRunning = true;
+
+        _receiveThread = new Thread(ReceiveLoop)
+        {
+            IsBackground = true,
+            Name = "FayteWO Client Receive Thread"
+        };
+
+        _receiveThread.Start();
+
         Console.WriteLine("Connected to server.");
     }
 
     public void Disconnect()
     {
+        _isRunning = false;
+
+        try
+        {
+            _client?.Close();
+        }
+        catch
+        {
+            // Ignore disconnect cleanup errors for now.
+        }
+
         _reader?.Dispose();
         _writer?.Dispose();
         _client?.Dispose();
@@ -60,7 +84,7 @@ public sealed class GameClient
         Console.WriteLine("Disconnected from server.");
     }
 
-    public bool Login(string username, string password)
+    public void Login(string username, string password)
     {
         LoginRequestPacket loginRequest = new LoginRequestPacket(username, password);
 
@@ -69,40 +93,7 @@ public sealed class GameClient
         Console.WriteLine();
         Console.WriteLine($"Sending LoginRequest: {outgoingJson}");
 
-        string? responseJson = SendPacketAndGetResponse(outgoingJson);
-
-        if (string.IsNullOrWhiteSpace(responseJson))
-        {
-            Console.WriteLine("No login response received.");
-            return false;
-        }
-
-        Console.WriteLine($"Received login response: {responseJson}");
-
-        NetworkPacket responsePacket = PacketSerializer.DeserializeEnvelope(responseJson);
-
-        if (responsePacket.Type != PacketType.LoginResult)
-        {
-            Console.WriteLine($"Expected LoginResult but received {responsePacket.Type}.");
-            return false;
-        }
-
-        LoginResultPacket loginResult = PacketSerializer.DeserializePayload<LoginResultPacket>(responsePacket);
-
-        Console.WriteLine($"Login message: {loginResult.Message}");
-
-        if (!loginResult.Success || loginResult.PlayerId is null)
-        {
-            return false;
-        }
-
-        PlayerId = loginResult.PlayerId.Value;
-        Position = loginResult.SpawnPosition;
-
-        Console.WriteLine($"Logged in as PlayerId={PlayerId}");
-        Console.WriteLine($"Spawn position={Position}");
-
-        return true;
+        SendRaw(outgoingJson);
     }
 
     public void SendMoveRequest(Direction direction)
@@ -120,28 +111,69 @@ public sealed class GameClient
         Console.WriteLine();
         Console.WriteLine($"Sending MoveRequest: {outgoingJson}");
 
-        string? responseJson = SendPacketAndGetResponse(outgoingJson);
-
-        if (string.IsNullOrWhiteSpace(responseJson))
-        {
-            Console.WriteLine("No response received.");
-            return;
-        }
-
-        Console.WriteLine($"Received response: {responseJson}");
-
-        HandleServerResponse(responseJson);
+        SendRaw(outgoingJson);
     }
 
-    private string? SendPacketAndGetResponse(string outgoingJson)
+    private void SendRaw(string outgoingJson)
     {
-        if (_writer is null || _reader is null)
+        if (_writer is null)
         {
             throw new InvalidOperationException("Client is not connected.");
         }
 
-        _writer.WriteLine(outgoingJson);
-        return _reader.ReadLine();
+        lock (_sendLock)
+        {
+            _writer.WriteLine(outgoingJson);
+        }
+    }
+
+    private void ReceiveLoop()
+    {
+        while (_isRunning)
+        {
+            try
+            {
+                if (_reader is null)
+                {
+                    return;
+                }
+
+                string? responseJson = _reader.ReadLine();
+
+                if (responseJson is null)
+                {
+                    Console.WriteLine("Server closed the connection.");
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(responseJson))
+                {
+                    continue;
+                }
+
+                Console.WriteLine();
+                Console.WriteLine($"Received packet: {responseJson}");
+
+                HandleServerResponse(responseJson);
+            }
+            catch (IOException)
+            {
+                if (_isRunning)
+                {
+                    Console.WriteLine("Lost connection to server.");
+                }
+
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Receive loop error: {ex.Message}");
+            }
+        }
     }
 
     private void HandleServerResponse(string responseJson)
@@ -150,6 +182,10 @@ public sealed class GameClient
 
         switch (responsePacket.Type)
         {
+            case PacketType.LoginResult:
+                HandleLoginResult(responsePacket);
+                break;
+
             case PacketType.EntityMoved:
                 HandleEntityMoved(responsePacket);
                 break;
@@ -164,11 +200,30 @@ public sealed class GameClient
         }
     }
 
+    private void HandleLoginResult(NetworkPacket responsePacket)
+    {
+        LoginResultPacket loginResult = PacketSerializer.DeserializePayload<LoginResultPacket>(responsePacket);
+
+        Console.WriteLine($"Login message: {loginResult.Message}");
+
+        if (!loginResult.Success || loginResult.PlayerId is null)
+        {
+            Console.WriteLine("Login failed.");
+            return;
+        }
+
+        PlayerId = loginResult.PlayerId.Value;
+        Position = loginResult.SpawnPosition;
+
+        Console.WriteLine($"Logged in as PlayerId={PlayerId}");
+        Console.WriteLine($"Spawn position={Position}");
+    }
+
     private void HandleEntityMoved(NetworkPacket responsePacket)
     {
         EntityMovedPacket moved = PacketSerializer.DeserializePayload<EntityMovedPacket>(responsePacket);
 
-    Console.WriteLine($"Entity {moved.EntityId} moved from {moved.FromPosition} to {moved.ToPosition}");
+        Console.WriteLine($"Entity {moved.EntityId} moved from {moved.FromPosition} to {moved.ToPosition}");
 
         if (PlayerId == moved.EntityId)
         {
