@@ -5,28 +5,24 @@ namespace FayteWO.Server.Systems;
 
 public sealed class MovementSystem
 {
+    private readonly WorldMap _worldMap;
     private readonly Dictionary<int, Tile> _tileDefinitions;
 
-    public MovementSystem(IEnumerable<Tile> tileDefinitions)
+    public MovementSystem(WorldMap worldMap, IEnumerable<Tile> tileDefinitions)
     {
+        _worldMap = worldMap;
         _tileDefinitions = tileDefinitions.ToDictionary(tile => tile.TileId);
     }
 
-    public bool TryMove(PlayerState player, Direction direction, Chunk chunk, out string reason)
+    public bool TryMove(PlayerState player, Direction direction, out string reason)
     {
         TilePosition targetPosition = player.Position.Offset(direction);
 
-        int localX = Chunk.WorldToLocalCoordinate(targetPosition.X);
-        int localY = Chunk.WorldToLocalCoordinate(targetPosition.Y);
-        int localZ = targetPosition.Z - chunk.ChunkZ;
-
-        if (!chunk.ContainsLocalPosition(localX, localY, localZ))
+        if (!_worldMap.TryGetTileId(targetPosition, out int targetTileId))
         {
-            reason = $"Target position {targetPosition} is outside the loaded chunk.";
+            reason = $"Target position {targetPosition} is outside the loaded world.";
             return false;
         }
-
-        int targetTileId = chunk.GetTileId(localX, localY, localZ);
 
         if (!_tileDefinitions.TryGetValue(targetTileId, out Tile? targetTile))
         {
