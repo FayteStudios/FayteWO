@@ -10,6 +10,16 @@ const int port = 7777;
 Console.WriteLine("FayteWO Client Starting...");
 Console.WriteLine($"Connecting to {host}:{port}");
 
+using TcpClient client = new TcpClient();
+client.Connect(host, port);
+
+using NetworkStream stream = client.GetStream();
+using StreamReader reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+using StreamWriter writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true)
+{
+    AutoFlush = true
+};
+
 Guid? playerId = Login("TestPlayer", "password");
 
 if (playerId is null)
@@ -107,16 +117,6 @@ void SendMoveRequest(Guid playerId, Direction direction)
 
 string? SendPacketAndGetResponse(string outgoingJson)
 {
-    using TcpClient client = new TcpClient();
-    client.Connect(host, port);
-
-    using NetworkStream stream = client.GetStream();
-    using StreamReader reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-    using StreamWriter writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true)
-    {
-        AutoFlush = true
-    };
-
     writer.WriteLine(outgoingJson);
     return reader.ReadLine();
 }

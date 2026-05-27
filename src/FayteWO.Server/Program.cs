@@ -48,6 +48,13 @@ while (true)
     Console.WriteLine();
     Console.WriteLine("Client connected.");
 
+    HandleClient(client);
+
+    Console.WriteLine("Client disconnected.");
+}
+
+void HandleClient(TcpClient client)
+{
     using NetworkStream stream = client.GetStream();
     using StreamReader reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
     using StreamWriter writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true)
@@ -55,22 +62,29 @@ while (true)
         AutoFlush = true
     };
 
-    string? incomingJson = reader.ReadLine();
-
-    if (string.IsNullOrWhiteSpace(incomingJson))
+    while (true)
     {
-        Console.WriteLine("Received empty packet.");
-        continue;
+        string? incomingJson = reader.ReadLine();
+
+        if (incomingJson is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(incomingJson))
+        {
+            Console.WriteLine("Received empty packet.");
+            continue;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Received raw packet: {incomingJson}");
+
+        string responseJson = HandleRawPacket(incomingJson);
+
+        Console.WriteLine($"Sending response: {responseJson}");
+        writer.WriteLine(responseJson);
     }
-
-    Console.WriteLine($"Received raw packet: {incomingJson}");
-
-    string responseJson = HandleRawPacket(incomingJson);
-
-    Console.WriteLine($"Sending response: {responseJson}");
-    writer.WriteLine(responseJson);
-
-    Console.WriteLine("Client disconnected.");
 }
 
 Chunk CreateFilledChunk(int chunkX, int chunkY, int tileId)
