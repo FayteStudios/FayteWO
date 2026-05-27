@@ -31,14 +31,10 @@ worldMap.AddChunk(chunk10);
 // Block movement at world position 33,0.
 worldMap.TrySetTileId(new TilePosition(33, 0, 0), wall.TileId);
 
-PlayerState player = new PlayerState(
-    Guid.NewGuid(),
-    "TestPlayer",
-    new TilePosition(30, 0, 0));
+Dictionary<Guid, PlayerState> players = new();
 
 MovementSystem movementSystem = new MovementSystem(worldMap, tileDefinitions);
 
-Console.WriteLine($"Spawned player: {player}");
 Console.WriteLine($"Listening on 127.0.0.1:{port}");
 Console.WriteLine("Start the FayteWO.Client project in another terminal.");
 
@@ -100,6 +96,9 @@ string HandleRawPacket(string json)
 
         return packet.Type switch
         {
+            PacketType.LoginRequest => HandleLoginRequest(
+                PacketSerializer.DeserializePayload<LoginRequestPacket>(packet)),
+
             PacketType.MoveRequest => HandleMoveRequest(
                 PacketSerializer.DeserializePayload<MoveRequestPacket>(packet)),
 
@@ -116,11 +115,47 @@ string HandleRawPacket(string json)
     }
 }
 
+string HandleLoginRequest(LoginRequestPacket packet)
+{
+    Console.WriteLine($"Decoded LoginRequest: Username={packet.Username}");
+
+    if (string.IsNullOrWhiteSpace(packet.Username))
+    {
+        LoginResultPacket failedLogin = new(
+            Success: false,
+            Message: "Username cannot be empty.",
+            PlayerId: null,
+            SpawnPosition: null);
+
+        return PacketSerializer.Serialize(PacketType.LoginResult, failedLogin);
+    }
+
+    Guid playerId = Guid.NewGuid();
+    TilePosition spawnPosition = new TilePosition(30, 0, 0);
+
+    PlayerState player = new PlayerState(
+        playerId,
+        packet.Username,
+        spawnPosition);
+
+    players.Add(playerId, player);
+
+    Console.WriteLine($"Created player: {player}");
+
+    LoginResultPacket successfulLogin = new(
+        Success: true,
+        Message: "Login successful.",
+        PlayerId: player.PlayerId,
+        SpawnPosition: player.Position);
+
+    return PacketSerializer.Serialize(PacketType.LoginResult, successfulLogin);
+}
+
 string HandleMoveRequest(MoveRequestPacket packet)
 {
     Console.WriteLine($"Decoded MoveRequest: Player={packet.PlayerId}, Direction={packet.Direction}");
 
-    if (packet.PlayerId != player.PlayerId)
+    if (!players.TryGetValue(packet.PlayerId, out PlayerState? player))
     {
         return PacketSerializer.Serialize(
             PacketType.ServerMessage,

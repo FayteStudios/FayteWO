@@ -7,41 +7,75 @@ using FayteWO.Shared.World;
 const string host = "127.0.0.1";
 const int port = 7777;
 
-// For this first TCP test, copy the PlayerId printed by the server if needed.
-// For now, this intentionally uses an empty/unknown ID so you can see rejection.
-// In the next milestone, the client will login and receive the real PlayerId.
-Guid playerId = Guid.Empty;
-
 Console.WriteLine("FayteWO Client Starting...");
 Console.WriteLine($"Connecting to {host}:{port}");
 
-SendMoveRequest(Direction.East);
-SendMoveRequest(Direction.East);
-SendMoveRequest(Direction.East);
+Guid? playerId = Login("TestPlayer", "password");
+
+if (playerId is null)
+{
+    Console.WriteLine("Login failed. Client shutting down.");
+    return;
+}
+
+SendMoveRequest(playerId.Value, Direction.East);
+SendMoveRequest(playerId.Value, Direction.East);
+SendMoveRequest(playerId.Value, Direction.East);
 
 Console.WriteLine("Client test complete.");
 
-void SendMoveRequest(Direction direction)
+Guid? Login(string username, string password)
+{
+    LoginRequestPacket loginRequest = new LoginRequestPacket(username, password);
+
+    string outgoingJson = PacketSerializer.Serialize(PacketType.LoginRequest, loginRequest);
+
+    Console.WriteLine();
+    Console.WriteLine($"Sending LoginRequest: {outgoingJson}");
+
+    string? responseJson = SendPacketAndGetResponse(outgoingJson);
+
+    if (string.IsNullOrWhiteSpace(responseJson))
+    {
+        Console.WriteLine("No login response received.");
+        return null;
+    }
+
+    Console.WriteLine($"Received login response: {responseJson}");
+
+    NetworkPacket responsePacket = PacketSerializer.DeserializeEnvelope(responseJson);
+
+    if (responsePacket.Type != PacketType.LoginResult)
+    {
+        Console.WriteLine($"Expected LoginResult but received {responsePacket.Type}.");
+        return null;
+    }
+
+    LoginResultPacket loginResult = PacketSerializer.DeserializePayload<LoginResultPacket>(responsePacket);
+
+    Console.WriteLine($"Login message: {loginResult.Message}");
+
+    if (!loginResult.Success || loginResult.PlayerId is null)
+    {
+        return null;
+    }
+
+    Console.WriteLine($"Logged in as PlayerId={loginResult.PlayerId}");
+    Console.WriteLine($"Spawn position={loginResult.SpawnPosition}");
+
+    return loginResult.PlayerId.Value;
+}
+
+void SendMoveRequest(Guid playerId, Direction direction)
 {
     MoveRequestPacket moveRequest = new MoveRequestPacket(playerId, direction);
 
     string outgoingJson = PacketSerializer.Serialize(PacketType.MoveRequest, moveRequest);
 
-    using TcpClient client = new TcpClient();
-    client.Connect(host, port);
-
-    using NetworkStream stream = client.GetStream();
-    using StreamReader reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-    using StreamWriter writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true)
-    {
-        AutoFlush = true
-    };
-
     Console.WriteLine();
     Console.WriteLine($"Sending MoveRequest: {outgoingJson}");
-    writer.WriteLine(outgoingJson);
 
-    string? responseJson = reader.ReadLine();
+    string? responseJson = SendPacketAndGetResponse(outgoingJson);
 
     if (string.IsNullOrWhiteSpace(responseJson))
     {
@@ -69,4 +103,20 @@ void SendMoveRequest(Direction direction)
             Console.WriteLine($"Unhandled response packet type: {responsePacket.Type}");
             break;
     }
+}
+
+string? SendPacketAndGetResponse(string outgoingJson)
+{
+    using TcpClient client = new TcpClient();
+    client.Connect(host, port);
+
+    using NetworkStream stream = client.GetStream();
+    using StreamReader reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+    using StreamWriter writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true)
+    {
+        AutoFlush = true
+    };
+
+    writer.WriteLine(outgoingJson);
+    return reader.ReadLine();
 }
