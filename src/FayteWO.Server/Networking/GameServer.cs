@@ -67,7 +67,7 @@ public sealed class GameServer
         }
     }
 
-    private string HandleRawPacket(string json)
+    private string HandleRawPacket(ClientSession session, string json)
     {
         try
         {
@@ -76,9 +76,11 @@ public sealed class GameServer
             return packet.Type switch
             {
                 PacketType.LoginRequest => HandleLoginRequest(
+                    session,
                     PacketSerializer.DeserializePayload<LoginRequestPacket>(packet)),
 
                 PacketType.MoveRequest => HandleMoveRequest(
+                    session,
                     PacketSerializer.DeserializePayload<MoveRequestPacket>(packet)),
 
                 _ => PacketSerializer.Serialize(
@@ -93,78 +95,96 @@ public sealed class GameServer
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
     }
+    private string HandleLoginRequest(ClientSession session, LoginRequestPacket packet)
+{
+    Console.WriteLine($"Decoded LoginRequest: Username={packet.Username}");
 
-    private string HandleLoginRequest(LoginRequestPacket packet)
+    if (session.IsLoggedIn)
     {
-        Console.WriteLine($"Decoded LoginRequest: Username={packet.Username}");
+        LoginResultPacket alreadyLoggedIn = new(
+            Success: false,
+            Message: "This connection is already logged in.",
+            PlayerId: session.PlayerId,
+            SpawnPosition: null);
 
-        if (string.IsNullOrWhiteSpace(packet.Username))
-        {
-            LoginResultPacket failedLogin = new(
-                Success: false,
-                Message: "Username cannot be empty.",
-                PlayerId: null,
-                SpawnPosition: null);
-
-            return PacketSerializer.Serialize(PacketType.LoginResult, failedLogin);
-        }
-
-        Guid playerId = Guid.NewGuid();
-        TilePosition spawnPosition = new TilePosition(30, 0, 0);
-
-        PlayerState player = new PlayerState(
-            playerId,
-            packet.Username,
-            spawnPosition);
-
-        _players.Add(playerId, player);
-
-        Console.WriteLine($"Created player: {player}");
-
-        LoginResultPacket successfulLogin = new(
-            Success: true,
-            Message: "Login successful.",
-            PlayerId: player.PlayerId,
-            SpawnPosition: player.Position);
-
-        return PacketSerializer.Serialize(PacketType.LoginResult, successfulLogin);
+        return PacketSerializer.Serialize(PacketType.LoginResult, alreadyLoggedIn);
     }
 
-    private string HandleMoveRequest(MoveRequestPacket packet)
+    if (string.IsNullOrWhiteSpace(packet.Username))
     {
-        Console.WriteLine($"Decoded MoveRequest: Player={packet.PlayerId}, Direction={packet.Direction}");
+        LoginResultPacket failedLogin = new(
+            Success: false,
+            Message: "Username cannot be empty.",
+            PlayerId: null,
+            SpawnPosition: null);
 
-        if (!_players.TryGetValue(packet.PlayerId, out PlayerState? player))
-        {
-            return PacketSerializer.Serialize(
-                PacketType.ServerMessage,
-                new ServerMessagePacket("Move rejected: unknown player."));
-        }
-
-        TilePosition fromPosition = player.Position;
-
-        bool moved = _movementSystem.TryMove(player, packet.Direction, out string reason);
-
-        Console.WriteLine(moved ? "Move accepted." : "Move rejected.");
-        Console.WriteLine(reason);
-        Console.WriteLine($"Player position: {player.Position}");
-
-        if (!moved)
-        {
-            return PacketSerializer.Serialize(
-                PacketType.ServerMessage,
-                new ServerMessagePacket(reason));
-        }
-
-        EntityMovedPacket movedPacket = new EntityMovedPacket(
-            player.PlayerId,
-            fromPosition,
-            player.Position,
-            packet.Direction);
-
-        return PacketSerializer.Serialize(PacketType.EntityMoved, movedPacket);
+        return PacketSerializer.Serialize(PacketType.LoginResult, failedLogin);
     }
 
+    Guid playerId = Guid.NewGuid();
+    TilePosition spawnPosition = new TilePosition(30, 0, 0);
+
+    PlayerState player = new PlayerState(
+        playerId,
+        packet.Username,
+        spawnPosition);
+
+    _players.Add(playerId, player);
+    session.SetPlayerId(playerId);
+
+    Console.WriteLine($"Created player: {player}");
+    Console.WriteLine($"Session associated with PlayerId={playerId}");
+
+    LoginResultPacket successfulLogin = new(
+        Success: true,
+        Message: "Login successful.",
+        PlayerId: player.PlayerId,
+        SpawnPosition: player.Position);
+
+    return PacketSerializer.Serialize(PacketType.LoginResult, successfulLogin);
+}
+
+    private string HandleMoveRequest(ClientSession session, MoveRequestPacket packet)
+{
+    Console.WriteLine($"Decoded MoveRequest: SessionPlayer={session.PlayerId}, Direction={packet.Direction}");
+
+    if (session.PlayerId is null)
+    {
+        return PacketSerializer.Serialize(
+            PacketType.ServerMessage,
+            new ServerMessagePacket("Move rejected: client is not logged in."));
+    }
+
+    if (!_players.TryGetValue(session.PlayerId.Value, out PlayerState? player))
+    {
+        return PacketSerializer.Serialize(
+            PacketType.ServerMessage,
+            new ServerMessagePacket("Move rejected: player session is invalid."));
+    }
+
+    TilePosition fromPosition = player.Position;
+
+    bool moved = _movementSystem.TryMove(player, packet.Direction, out string reason);
+
+    Console.WriteLine(moved ? "Move accepted." : "Move rejected.");
+    Console.WriteLine(reason);
+    Console.WriteLine($"Player position: {player.Position}");
+
+    if (!moved)
+    {
+        return PacketSerializer.Serialize(
+            PacketType.ServerMessage,
+            new ServerMessagePacket(reason));
+    }
+
+    EntityMovedPacket movedPacket = new EntityMovedPacket(
+        player.PlayerId,
+        fromPosition,
+        player.Position,
+        packet.Direction);
+
+    return PacketSerializer.Serialize(PacketType.EntityMoved, movedPacket);
+}
     private static Chunk CreateFilledChunk(int chunkX, int chunkY, int tileId)
     {
         Chunk chunk = new Chunk(chunkX, chunkY);

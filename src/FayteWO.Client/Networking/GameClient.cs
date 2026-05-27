@@ -113,7 +113,7 @@ public sealed class GameClient
             return;
         }
 
-        MoveRequestPacket moveRequest = new MoveRequestPacket(PlayerId.Value, direction);
+        MoveRequestPacket moveRequest = new MoveRequestPacket(direction);
 
         string outgoingJson = PacketSerializer.Serialize(PacketType.MoveRequest, moveRequest);
 
