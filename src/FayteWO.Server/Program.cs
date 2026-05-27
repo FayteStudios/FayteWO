@@ -1,22 +1,56 @@
-﻿using FayteWO.Shared.World;
+﻿using FayteWO.Server.Systems;
+using FayteWO.Shared.Entities;
+using FayteWO.Shared.World;
 
 Console.WriteLine("FayteWO Server Starting...");
 
 Tile grass = new Tile(1, "Grass");
 Tile wall = new Tile(2, "Stone Wall", TileFlags.BlocksMovement | TileFlags.BlocksSight);
 
+List<Tile> tileDefinitions =
+[
+    grass,
+    wall
+];
+
 Chunk chunk = new Chunk(0, 0);
 
-chunk.SetTileId(0, 0, grass.TileId);
-chunk.SetTileId(1, 0, wall.TileId);
+// Fill the chunk with grass.
+for (int x = 0; x < Chunk.Size; x++)
+{
+    for (int y = 0; y < Chunk.Size; y++)
+    {
+        chunk.SetTileId(x, y, grass.TileId);
+    }
+}
 
-TilePosition start = new TilePosition(0, 0, 0);
-TilePosition moved = start.Offset(Direction.East);
+// Put a wall at world/local position 2,0.
+chunk.SetTileId(2, 0, wall.TileId);
 
-Console.WriteLine($"Created tiles: {grass}, {wall}");
-Console.WriteLine($"Start position: {start}");
-Console.WriteLine($"Moved east to: {moved}");
-Console.WriteLine($"Tile at local 0,0: {chunk.GetTileId(0, 0)}");
-Console.WriteLine($"Tile at local 1,0: {chunk.GetTileId(1, 0)}");
+PlayerState player = new PlayerState(
+    Guid.NewGuid(),
+    "TestPlayer",
+    new TilePosition(0, 0, 0));
 
+MovementSystem movementSystem = new MovementSystem(tileDefinitions);
+
+Console.WriteLine($"Spawned player: {player}");
+
+TryMoveAndPrint(Direction.East);
+TryMoveAndPrint(Direction.East);
+TryMoveAndPrint(Direction.East);
+
+Console.WriteLine($"Final player state: {player}");
 Console.WriteLine("Server test complete.");
+
+void TryMoveAndPrint(Direction direction)
+{
+    Console.WriteLine();
+    Console.WriteLine($"Trying to move {direction}...");
+
+    bool moved = movementSystem.TryMove(player, direction, chunk, out string reason);
+
+    Console.WriteLine(moved ? "Move accepted." : "Move rejected.");
+    Console.WriteLine(reason);
+    Console.WriteLine($"Player position: {player.Position}");
+}
