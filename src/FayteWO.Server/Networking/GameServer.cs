@@ -278,23 +278,36 @@ public sealed class GameServer
             return PacketSerializer.Serialize(PacketType.LoginResult, alreadyLoggedIn);
         }
 
-        if (string.IsNullOrWhiteSpace(packet.Username))
-        {
-            LoginResultPacket failedLogin = new(
-                Success: false,
-                Message: "Username cannot be empty.",
-                PlayerId: null,
-                SpawnPosition: null);
+    string username = packet.Username.Trim();
 
-            return PacketSerializer.Serialize(PacketType.LoginResult, failedLogin);
-        }
+    if (string.IsNullOrWhiteSpace(username))
+    {
+        LoginResultPacket failedLogin = new(
+            Success: false,
+            Message: "Username cannot be empty.",
+            PlayerId: null,
+            SpawnPosition: null);
+
+        return PacketSerializer.Serialize(PacketType.LoginResult, failedLogin);
+    }
+
+    if (username.Length > 20)
+    {
+        LoginResultPacket failedLogin = new(
+            Success: false,
+            Message: "Username cannot be longer than 20 characters.",
+            PlayerId: null,
+            SpawnPosition: null);
+
+        return PacketSerializer.Serialize(PacketType.LoginResult, failedLogin);
+    }
 
         Guid playerId = Guid.NewGuid();
         TilePosition spawnPosition = new TilePosition(30, 0, 0);
 
         PlayerState player = new PlayerState(
             playerId,
-            packet.Username,
+            username,
             spawnPosition);
 
         _players[playerId] = player;

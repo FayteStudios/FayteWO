@@ -6,12 +6,14 @@ const int port = 7777;
 
 Console.WriteLine("FayteWO Client Starting...");
 
+string username = PromptForUsername();
+
 GameClient client = new GameClient(host, port);
 
 try
 {
     client.Connect();
-    client.Login("TestPlayer", "password");
+    client.Login(username, "password");
 
     Console.WriteLine("Waiting for login response...");
 
@@ -104,6 +106,32 @@ try
 finally
 {
     client.Disconnect();
+}
+
+string PromptForUsername()
+{
+    while (true)
+    {
+        Console.Write("Enter username: ");
+
+        string? input = Console.ReadLine();
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            Console.WriteLine("Username cannot be empty.");
+            continue;
+        }
+
+        string username = input.Trim();
+
+        if (username.Length > 20)
+        {
+            Console.WriteLine("Username cannot be longer than 20 characters.");
+            continue;
+        }
+
+        return username;
+    }
 }
 
 void HandleChatCommand(string[] parts)
