@@ -154,6 +154,10 @@ public sealed class GameServer
                     session,
                     PacketSerializer.DeserializePayload<MoveRequestPacket>(packet)),
 
+                PacketType.ChatMessage => HandleChatMessage(
+                    session,
+                    PacketSerializer.DeserializePayload<ChatMessagePacket>(packet)),
+
                 _ => PacketSerializer.Serialize(
                     PacketType.ServerMessage,
                     new ServerMessagePacket($"Unhandled packet type: {packet.Type}"))
@@ -166,6 +170,52 @@ public sealed class GameServer
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
     }    
+
+    private string? HandleChatMessage(ClientSession session, ChatMessagePacket packet)
+    {
+        Console.WriteLine($"Session {session.SessionId}: Decoded ChatMessage: {packet.Message}");
+
+        if (session.PlayerId is null)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Chat rejected: client is not logged in."));
+        }
+
+        if (!_players.TryGetValue(session.PlayerId.Value, out PlayerState? sender))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Chat rejected: player session is invalid."));
+        }
+
+        string message = packet.Message.Trim();
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Chat rejected: message cannot be empty."));
+        }
+
+        if (message.Length > 300)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Chat rejected: message is too long."));
+        }
+
+        ChatBroadcastPacket broadcastPacket = new ChatBroadcastPacket(
+            sender.PlayerId,
+            sender.Name,
+            message);
+
+        string broadcastJson = PacketSerializer.Serialize(PacketType.ChatBroadcast, broadcastPacket);
+
+        BroadcastToLoggedInSessions(broadcastJson);
+
+        return null;
+    }
 
     private void HandleSessionDisconnected(ClientSession session)
     {

@@ -90,6 +90,10 @@ try
             case "ents":
                 client.PrintKnownEntities();
                 break;
+                case "say":
+            case "chat":
+                HandleChatCommand(parts);
+                break;
             default:
                 Console.WriteLine($"Unknown command: {command}");
                 Console.WriteLine("Type 'help' for available commands.");
@@ -100,6 +104,19 @@ try
 finally
 {
     client.Disconnect();
+}
+
+void HandleChatCommand(string[] parts)
+{
+    if (parts.Length < 2)
+    {
+        Console.WriteLine("Usage: say your message here");
+        return;
+    }
+
+    string message = string.Join(' ', parts.Skip(1));
+
+    client.SendChatMessage(message);
 }
 
 void HandleMoveCommand(string[] parts)
@@ -162,5 +179,6 @@ void PrintHelp()
     Console.WriteLine("  pos           Print current local player position");
     Console.WriteLine("  help          Show commands");
     Console.WriteLine("  entities      Print known entities");
+    Console.WriteLine("  say <message>  Send chat message");
     Console.WriteLine("  quit          Exit client");
 }

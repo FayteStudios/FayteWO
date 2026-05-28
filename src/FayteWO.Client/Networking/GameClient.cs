@@ -207,10 +207,20 @@ public sealed class GameClient
             case PacketType.EntityDespawned:
                 HandleEntityDespawned(responsePacket);
                 break;
+            case PacketType.ChatBroadcast:
+                HandleChatBroadcast(responsePacket);
+                break;
             default:
                 Console.WriteLine($"Unhandled response packet type: {responsePacket.Type}");
                 break;
         }
+    }
+
+    private static void HandleChatBroadcast(NetworkPacket responsePacket)
+    {
+        ChatBroadcastPacket chat = PacketSerializer.DeserializePayload<ChatBroadcastPacket>(responsePacket);
+
+        Console.WriteLine($"[Chat] {chat.SenderName}: {chat.Message}");
     }
 
     private void HandleEntitySpawned(NetworkPacket responsePacket)
@@ -244,6 +254,24 @@ public sealed class GameClient
         {
             Console.WriteLine($"Entity despawned: {despawned.EntityId}. Reason: {despawned.Reason}");
         }
+    }
+
+    public void SendChatMessage(string message)
+    {
+        if (PlayerId is null)
+        {
+            Console.WriteLine("Cannot chat before login.");
+            return;
+        }
+
+        ChatMessagePacket chatMessage = new ChatMessagePacket(message);
+
+        string outgoingJson = PacketSerializer.Serialize(PacketType.ChatMessage, chatMessage);
+
+        Console.WriteLine();
+        Console.WriteLine($"Sending ChatMessage: {outgoingJson}");
+
+        SendRaw(outgoingJson);
     }
 
     public void PrintKnownEntities()
