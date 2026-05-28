@@ -332,6 +332,10 @@ public sealed class GameServer
                     session,
                     PacketSerializer.DeserializePayload<ChatMessagePacket>(packet)),
 
+                PacketType.WhisperMessage => HandleWhisperMessage(
+                    session,
+                    PacketSerializer.DeserializePayload<WhisperMessagePacket>(packet)),
+
                 _ => PacketSerializer.Serialize(
                     PacketType.ServerMessage,
                     new ServerMessagePacket($"Unhandled packet type: {packet.Type}"))
@@ -344,6 +348,110 @@ public sealed class GameServer
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
     }    
+    
+    private bool TryGetSessionByPlayerId(Guid playerId, out ClientSession? targetSession)
+    {
+        foreach (ClientSession session in _sessions.Values)
+        {
+            if (session.PlayerId == playerId)
+            {
+                targetSession = session;
+                return true;
+            }
+        }
+
+        targetSession = null;
+        return false;
+    }
+
+    private string? HandleWhisperMessage(ClientSession session, WhisperMessagePacket packet)
+    {
+        Console.WriteLine(
+            $"Session {session.SessionId}: Decoded WhisperMessage: Target={packet.TargetUsername}, Message={packet.Message}");
+
+        if (session.PlayerId is null)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Whisper rejected: client is not logged in."));
+        }
+
+        if (!_players.TryGetValue(session.PlayerId.Value, out PlayerState? sender))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Whisper rejected: player session is invalid."));
+        }
+
+        string targetUsername = packet.TargetUsername.Trim();
+        string message = packet.Message.Trim();
+
+        if (string.IsNullOrWhiteSpace(targetUsername))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Whisper rejected: target username cannot be empty."));
+        }
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Whisper rejected: message cannot be empty."));
+        }
+
+        if (message.Length > 300)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Whisper rejected: message is too long."));
+        }
+
+        if (!_onlineUsernames.TryGetValue(targetUsername, out Guid targetPlayerId))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Whisper rejected: '{targetUsername}' is not online."));
+        }
+
+        if (!_players.TryGetValue(targetPlayerId, out PlayerState? targetPlayer))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Whisper rejected: '{targetUsername}' session is invalid."));
+        }
+
+        if (!TryGetSessionByPlayerId(targetPlayerId, out ClientSession? targetSession) || targetSession is null)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Whisper rejected: '{targetUsername}' is not connected."));
+        }
+
+        WhisperReceivedPacket incomingWhisper = new WhisperReceivedPacket(
+            sender.PlayerId,
+            sender.Name,
+            targetPlayer.Name,
+            message,
+            IsOutgoingCopy: false);
+
+        string incomingJson = PacketSerializer.Serialize(PacketType.WhisperReceived, incomingWhisper);
+
+        targetSession.SendRaw(incomingJson);
+
+        WhisperReceivedPacket outgoingCopy = new WhisperReceivedPacket(
+            sender.PlayerId,
+            sender.Name,
+            targetPlayer.Name,
+            message,
+            IsOutgoingCopy: true);
+
+        string outgoingCopyJson = PacketSerializer.Serialize(PacketType.WhisperReceived, outgoingCopy);
+
+        session.SendRaw(outgoingCopyJson);
+
+        return null;
+    }
 
     private string? HandleChatMessage(ClientSession session, ChatMessagePacket packet)
     {

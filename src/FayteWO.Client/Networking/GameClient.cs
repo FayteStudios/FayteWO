@@ -210,10 +210,45 @@ public sealed class GameClient
             case PacketType.ChatBroadcast:
                 HandleChatBroadcast(responsePacket);
                 break;
+            case PacketType.WhisperReceived:
+                HandleWhisperReceived(responsePacket);
+                break;
             default:
                 Console.WriteLine($"Unhandled response packet type: {responsePacket.Type}");
                 break;
         }
+    }
+
+    private static void HandleWhisperReceived(NetworkPacket responsePacket)
+    {
+        WhisperReceivedPacket whisper = PacketSerializer.DeserializePayload<WhisperReceivedPacket>(responsePacket);
+
+        if (whisper.IsOutgoingCopy)
+        {
+            Console.WriteLine($"[To {whisper.TargetName}] {whisper.Message}");
+        }
+        else
+        {
+            Console.WriteLine($"[From {whisper.SenderName}] {whisper.Message}");
+        }
+    }
+
+    public void SendWhisperMessage(string targetUsername, string message)
+    {
+        if (PlayerId is null)
+        {
+            Console.WriteLine("Cannot whisper before login.");
+            return;
+        }
+
+        WhisperMessagePacket whisperMessage = new WhisperMessagePacket(targetUsername, message);
+
+        string outgoingJson = PacketSerializer.Serialize(PacketType.WhisperMessage, whisperMessage);
+
+        Console.WriteLine();
+        Console.WriteLine($"Sending WhisperMessage: {outgoingJson}");
+
+        SendRaw(outgoingJson);
     }
 
     private static void HandleChatBroadcast(NetworkPacket responsePacket)

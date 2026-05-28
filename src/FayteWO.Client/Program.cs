@@ -96,6 +96,12 @@ try
             case "chat":
                 HandleChatCommand(parts);
                 break;
+                case "whisper":
+            case "tell":
+            case "wsp":
+            case "pm":
+                HandleWhisperCommand(parts);
+                break;
             default:
                 Console.WriteLine($"Unknown command: {command}");
                 Console.WriteLine("Type 'help' for available commands.");
@@ -145,6 +151,20 @@ void HandleChatCommand(string[] parts)
     string message = string.Join(' ', parts.Skip(1));
 
     client.SendChatMessage(message);
+}
+
+void HandleWhisperCommand(string[] parts)
+{
+    if (parts.Length < 3)
+    {
+        Console.WriteLine("Usage: whisper <username> <message>");
+        return;
+    }
+
+    string targetUsername = parts[1];
+    string message = string.Join(' ', parts.Skip(2));
+
+    client.SendWhisperMessage(targetUsername, message);
 }
 
 void HandleMoveCommand(string[] parts)
@@ -207,6 +227,7 @@ void PrintHelp()
     Console.WriteLine("  pos           Print current local player position");
     Console.WriteLine("  help          Show commands");
     Console.WriteLine("  entities      Print known entities");
+    Console.WriteLine("  whisper <user> <message>  Send private message");
     Console.WriteLine("  say <message>  Send chat message");
     Console.WriteLine("  quit          Exit client");
 }

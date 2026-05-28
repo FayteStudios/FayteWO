@@ -8,6 +8,7 @@ public enum PacketType
     LoginRequest = 100,
     MoveRequest = 101,
     ChatMessage = 102,
+    WhisperMessage = 103,
 
     // Server to client
     LoginResult = 200,
@@ -16,5 +17,6 @@ public enum PacketType
     ServerMessage = 203,
     EntitySpawned = 204,
     EntityDespawned = 205,
-    ChatBroadcast = 206
+    ChatBroadcast = 206,
+    WhisperReceived = 207
 }
