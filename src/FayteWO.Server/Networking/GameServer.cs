@@ -19,6 +19,8 @@ public sealed class GameServer
     private readonly ConcurrentDictionary<string, Guid> _onlineUsernames = new(
     StringComparer.OrdinalIgnoreCase);
     private TcpListener? _listener;
+    private bool _isRunning;
+
 
     public GameServer(int port)
     {
@@ -52,16 +54,15 @@ public sealed class GameServer
         Console.WriteLine("FayteWO Server Starting...");
         Console.WriteLine($"Listening on 127.0.0.1:{_port}");
         Console.WriteLine("Start one or more FayteWO.Client instances in other terminals.");
+        Console.WriteLine("Type 'help' for server commands.");
 
         _listener = new TcpListener(IPAddress.Loopback, _port);
         _listener.Start();
 
-        while (true)
-        {
-            TcpClient client = _listener.AcceptTcpClient();
+        _isRunning = true;
 
-            Task.Run(() => HandleClient(client));
-        }
+        Task.Run(AcceptClientsLoop);
+        RunConsoleCommandLoop();
     }
 
     private void SendExistingEntitiesToSession(ClientSession session, Guid newPlayerId)
@@ -82,6 +83,140 @@ public sealed class GameServer
 
             session.SendRaw(spawnJson);
         }
+    }
+
+    private void AcceptClientsLoop()
+    {
+        if (_listener is null)
+        {
+            throw new InvalidOperationException("Server listener has not been started.");
+        }
+
+        while (_isRunning)
+        {
+            try
+            {
+                TcpClient client = _listener.AcceptTcpClient();
+                Task.Run(() => HandleClient(client));
+            }
+            catch (SocketException)
+            {
+                if (_isRunning)
+                {
+                    Console.WriteLine("Socket error while accepting client.");
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+        }
+    }
+
+    private void RunConsoleCommandLoop()
+    {
+        while (_isRunning)
+        {
+            Console.WriteLine();
+            Console.Write("server> ");
+
+            string? input = Console.ReadLine();
+
+            if (input is null)
+            {
+                continue;
+            }
+
+            input = input.Trim();
+
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                continue;
+            }
+
+            string command = input.ToLowerInvariant();
+
+            switch (command)
+            {
+                case "help":
+                case "h":
+                    PrintServerHelp();
+                    break;
+
+                case "players":
+                case "p":
+                    PrintPlayers();
+                    break;
+
+                case "sessions":
+                case "s":
+                    PrintSessions();
+                    break;
+
+                case "stop":
+                case "exit":
+                case "quit":
+                case "q":
+                    Stop();
+                    return;
+
+                default:
+                    Console.WriteLine($"Unknown server command: {command}");
+                    Console.WriteLine("Type 'help' for available commands.");
+                    break;
+            }
+        }
+    }
+
+    private void PrintServerHelp()
+    {
+        Console.WriteLine();
+        Console.WriteLine("Server commands:");
+        Console.WriteLine("  players    List online players");
+        Console.WriteLine("  sessions   List active client sessions");
+        Console.WriteLine("  help       Show server commands");
+        Console.WriteLine("  stop       Stop the server");
+    }
+
+    private void PrintPlayers()
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Online players: {_players.Count}");
+
+        foreach (PlayerState player in _players.Values.OrderBy(player => player.Name))
+        {
+            Console.WriteLine($"  {player.Name} [{player.PlayerId}] at {player.Position}");
+        }
+    }
+
+    private void PrintSessions()
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Active sessions: {_sessions.Count}");
+
+        foreach (ClientSession session in _sessions.Values)
+        {
+            string playerText = session.PlayerId?.ToString() ?? "not logged in";
+            Console.WriteLine($"  Session {session.SessionId} | Player: {playerText}");
+        }
+    }
+
+    private void Stop()
+    {
+        Console.WriteLine("Stopping server...");
+
+        _isRunning = false;
+
+        try
+        {
+            _listener?.Stop();
+        }
+        catch
+        {
+            // Ignore shutdown cleanup errors for now.
+        }
+
+        Console.WriteLine("Server stopped.");
     }
 
     private void BroadcastEntitySpawned(PlayerState player, Guid excludeSessionId)
