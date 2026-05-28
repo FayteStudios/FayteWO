@@ -46,21 +46,66 @@ public sealed class GameServer
     }
 
     public void Start()
-{
-    Console.WriteLine("FayteWO Server Starting...");
-    Console.WriteLine($"Listening on 127.0.0.1:{_port}");
-    Console.WriteLine("Start one or more FayteWO.Client instances in other terminals.");
-
-    _listener = new TcpListener(IPAddress.Loopback, _port);
-    _listener.Start();
-
-    while (true)
     {
-        TcpClient client = _listener.AcceptTcpClient();
+        Console.WriteLine("FayteWO Server Starting...");
+        Console.WriteLine($"Listening on 127.0.0.1:{_port}");
+        Console.WriteLine("Start one or more FayteWO.Client instances in other terminals.");
 
-        Task.Run(() => HandleClient(client));
+        _listener = new TcpListener(IPAddress.Loopback, _port);
+        _listener.Start();
+
+        while (true)
+        {
+            TcpClient client = _listener.AcceptTcpClient();
+
+            Task.Run(() => HandleClient(client));
+        }
     }
-}
+
+    private void SendExistingEntitiesToSession(ClientSession session, Guid newPlayerId)
+    {
+        foreach (PlayerState existingPlayer in _players.Values)
+        {
+            if (existingPlayer.PlayerId == newPlayerId)
+            {
+                continue;
+            }
+
+            EntitySpawnedPacket spawnPacket = new EntitySpawnedPacket(
+                existingPlayer.PlayerId,
+                existingPlayer.Name,
+                existingPlayer.Position);
+
+            string spawnJson = PacketSerializer.Serialize(PacketType.EntitySpawned, spawnPacket);
+
+            session.SendRaw(spawnJson);
+        }
+    }
+
+    private void BroadcastEntitySpawned(PlayerState player, Guid excludeSessionId)
+    {
+        EntitySpawnedPacket spawnPacket = new EntitySpawnedPacket(
+            player.PlayerId,
+            player.Name,
+            player.Position);
+
+        string spawnJson = PacketSerializer.Serialize(PacketType.EntitySpawned, spawnPacket);
+
+        foreach (ClientSession session in _sessions.Values)
+        {
+            if (session.SessionId == excludeSessionId)
+            {
+                continue;
+            }
+
+            if (!session.IsLoggedIn)
+            {
+                continue;
+            }
+
+            session.SendRaw(spawnJson);
+        }
+    }
 
     private void HandleClient(TcpClient client)
     {
@@ -122,7 +167,7 @@ public sealed class GameServer
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
     }    
-    private string HandleLoginRequest(ClientSession session, LoginRequestPacket packet)
+    private string? HandleLoginRequest(ClientSession session, LoginRequestPacket packet)
     {
         Console.WriteLine($"Session {session.SessionId}: Decoded LoginRequest: Username={packet.Username}");
 
@@ -168,7 +213,19 @@ public sealed class GameServer
             PlayerId: player.PlayerId,
             SpawnPosition: player.Position);
 
-        return PacketSerializer.Serialize(PacketType.LoginResult, successfulLogin);
+        string loginResultJson = PacketSerializer.Serialize(PacketType.LoginResult, successfulLogin);
+
+        // First, tell this new client about itself/login.
+        session.SendRaw(loginResultJson);
+
+        // Then, tell the new client about already-existing players.
+        SendExistingEntitiesToSession(session, player.PlayerId);
+
+        // Finally, tell everyone else about the new player.
+        BroadcastEntitySpawned(player, excludeSessionId: session.SessionId);
+
+        // We already sent the login response manually.
+        return null;
     }
 
     private string? HandleMoveRequest(ClientSession session, MoveRequestPacket packet)

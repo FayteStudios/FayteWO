@@ -13,5 +13,6 @@ public enum PacketType
     EntityMoved = 201,
     ChunkData = 202,
     ServerMessage = 203,
-    PlayerState = 204
+    PlayerState = 204,
+    EntitySpawned = 204
 }

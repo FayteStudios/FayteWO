@@ -58,7 +58,7 @@ public sealed class ClientSession
 
                 Console.WriteLine();
                 Console.WriteLine($"Session {SessionId}: Received raw packet: {incomingJson}");
-
+                
                 string? responseJson = _packetHandler(this, incomingJson);
 
                 if (!string.IsNullOrWhiteSpace(responseJson))
