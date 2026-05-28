@@ -200,7 +200,9 @@ public sealed class GameClient
                 case PacketType.EntitySpawned:
                     HandleEntitySpawned(responsePacket);
                     break;
-
+            case PacketType.EntityDespawned:
+                HandleEntityDespawned(responsePacket);
+                break;
             default:
                 Console.WriteLine($"Unhandled response packet type: {responsePacket.Type}");
                 break;
@@ -212,6 +214,13 @@ public sealed class GameClient
         EntitySpawnedPacket spawned = PacketSerializer.DeserializePayload<EntitySpawnedPacket>(responsePacket);
 
         Console.WriteLine($"Entity spawned: {spawned.Name} [{spawned.EntityId}] at {spawned.Position}");
+    }
+
+    private void HandleEntityDespawned(NetworkPacket responsePacket)
+    {
+        EntityDespawnedPacket despawned = PacketSerializer.DeserializePayload<EntityDespawnedPacket>(responsePacket);
+
+        Console.WriteLine($"Entity despawned: {despawned.EntityId}. Reason: {despawned.Reason}");
     }
 
     private void HandleLoginResult(NetworkPacket responsePacket)

@@ -130,8 +130,7 @@ public sealed class GameServer
         {
             if (session is not null)
             {
-                _sessions.TryRemove(session.SessionId, out _);
-                Console.WriteLine($"Session {session.SessionId}: Client disconnected.");
+                HandleSessionDisconnected(session);
             }
             else
             {
@@ -167,6 +166,53 @@ public sealed class GameServer
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
     }    
+
+    private void HandleSessionDisconnected(ClientSession session)
+    {
+        _sessions.TryRemove(session.SessionId, out _);
+
+        Console.WriteLine($"Session {session.SessionId}: Client disconnected.");
+
+        if (session.PlayerId is null)
+        {
+            return;
+        }
+
+        if (_players.TryRemove(session.PlayerId.Value, out PlayerState? player))
+        {
+            Console.WriteLine($"Session {session.SessionId}: Removed player {player.Name} [{player.PlayerId}].");
+
+            BroadcastEntityDespawned(
+                player.PlayerId,
+                "Disconnected",
+                excludeSessionId: session.SessionId);
+        }
+    }
+
+    private void BroadcastEntityDespawned(Guid entityId, string reason, Guid excludeSessionId)
+    {
+        EntityDespawnedPacket despawnedPacket = new EntityDespawnedPacket(
+            entityId,
+            reason);
+
+        string despawnJson = PacketSerializer.Serialize(PacketType.EntityDespawned, despawnedPacket);
+
+        foreach (ClientSession session in _sessions.Values)
+        {
+            if (session.SessionId == excludeSessionId)
+            {
+                continue;
+            }
+
+            if (!session.IsLoggedIn)
+            {
+                continue;
+            }
+
+            session.SendRaw(despawnJson);
+        }
+    }
+
     private string? HandleLoginRequest(ClientSession session, LoginRequestPacket packet)
     {
         Console.WriteLine($"Session {session.SessionId}: Decoded LoginRequest: Username={packet.Username}");

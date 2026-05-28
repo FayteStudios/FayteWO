@@ -14,5 +14,6 @@ public enum PacketType
     ChunkData = 202,
     ServerMessage = 203,
     PlayerState = 204,
-    EntitySpawned = 204
+    EntitySpawned = 204,
+    EntityDespawned = 205
 }
