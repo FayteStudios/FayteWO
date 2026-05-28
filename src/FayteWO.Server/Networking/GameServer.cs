@@ -16,6 +16,8 @@ public sealed class GameServer
     private readonly MovementSystem _movementSystem;
     private readonly ConcurrentDictionary<Guid, PlayerState> _players = new();
     private readonly ConcurrentDictionary<Guid, ClientSession> _sessions = new();
+    private readonly ConcurrentDictionary<string, Guid> _onlineUsernames = new(
+    StringComparer.OrdinalIgnoreCase);
     private TcpListener? _listener;
 
     public GameServer(int port)
@@ -230,6 +232,8 @@ public sealed class GameServer
 
         if (_players.TryRemove(session.PlayerId.Value, out PlayerState? player))
         {
+            _onlineUsernames.TryRemove(player.Name, out _);
+
             Console.WriteLine($"Session {session.SessionId}: Removed player {player.Name} [{player.PlayerId}].");
 
             BroadcastEntityDespawned(
@@ -303,19 +307,39 @@ public sealed class GameServer
     }
 
         Guid playerId = Guid.NewGuid();
+
+        if (!_onlineUsernames.TryAdd(username, playerId))
+        {
+            LoginResultPacket failedLogin = new(
+                Success: false,
+                Message: $"Username '{username}' is already online.",
+                PlayerId: null,
+                SpawnPosition: null);
+
+            return PacketSerializer.Serialize(PacketType.LoginResult, failedLogin);
+        }
+
         TilePosition spawnPosition = new TilePosition(30, 0, 0);
+        PlayerState player;
 
-        PlayerState player = new PlayerState(
-            playerId,
-            username,
-            spawnPosition);
+        try
+        {
+            player = new PlayerState(
+                playerId,
+                username,
+                spawnPosition);
 
-        _players[playerId] = player;
-        session.SetPlayerId(playerId);
+            _players[playerId] = player;
+            session.SetPlayerId(playerId);
+        }
+        catch
+        {
+            _onlineUsernames.TryRemove(username, out _);
+            throw;
+        }
 
         Console.WriteLine($"Session {session.SessionId}: Created player: {player}");
         Console.WriteLine($"Session {session.SessionId}: Associated with PlayerId={playerId}");
-
         LoginResultPacket successfulLogin = new(
             Success: true,
             Message: "Login successful.",
