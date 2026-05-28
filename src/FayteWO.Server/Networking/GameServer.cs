@@ -134,7 +134,8 @@ public sealed class GameServer
                 continue;
             }
 
-            string command = input.ToLowerInvariant();
+            string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            string command = parts[0].ToLowerInvariant();
 
             switch (command)
             {
@@ -153,6 +154,11 @@ public sealed class GameServer
                     PrintSessions();
                     break;
 
+                case "announce":
+                case "a":
+                    HandleAnnounceCommand(parts);
+                    break;
+
                 case "stop":
                 case "exit":
                 case "quit":
@@ -168,14 +174,45 @@ public sealed class GameServer
         }
     }
 
+    private void HandleAnnounceCommand(string[] parts)
+    {
+        if (parts.Length < 2)
+        {
+            Console.WriteLine("Usage: announce <message>");
+            return;
+        }
+
+        string message = string.Join(' ', parts.Skip(1)).Trim();
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            Console.WriteLine("Announcement message cannot be empty.");
+            return;
+        }
+
+        if (message.Length > 300)
+        {
+            Console.WriteLine("Announcement message cannot be longer than 300 characters.");
+            return;
+        }
+
+        ServerMessagePacket packet = new ServerMessagePacket($"[Announcement] {message}");
+        string json = PacketSerializer.Serialize(PacketType.ServerMessage, packet);
+
+        BroadcastToLoggedInSessions(json);
+
+        Console.WriteLine($"Announcement sent to logged-in clients: {message}");
+    }
+
     private void PrintServerHelp()
     {
         Console.WriteLine();
         Console.WriteLine("Server commands:");
-        Console.WriteLine("  players    List online players");
-        Console.WriteLine("  sessions   List active client sessions");
-        Console.WriteLine("  help       Show server commands");
-        Console.WriteLine("  stop       Stop the server");
+        Console.WriteLine("  players               List online players");
+        Console.WriteLine("  sessions              List active client sessions");
+        Console.WriteLine("  announce <message>    Send a message to all logged-in clients");
+        Console.WriteLine("  help                  Show server commands");
+        Console.WriteLine("  stop                  Stop the server");
     }
 
     private void PrintPlayers()
