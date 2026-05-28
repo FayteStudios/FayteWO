@@ -10,6 +10,7 @@ public enum PacketType
     ChatMessage = 102,
     WhisperMessage = 103,
     ChunkRequest = 104,
+    TileDefinitionsRequest = 105,
 
     // Server to client
     LoginResult = 200,
@@ -19,5 +20,6 @@ public enum PacketType
     EntitySpawned = 204,
     EntityDespawned = 205,
     ChatBroadcast = 206,
-    WhisperReceived = 207
+    WhisperReceived = 207,
+    TileDefinitions = 208
 }

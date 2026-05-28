@@ -109,6 +109,10 @@ try
             case "localmap":
                 client.PrintMapAroundPlayer();
                 break;
+
+            case "tiles":
+                client.RequestTileDefinitions();
+                break;
             default:
                 Console.WriteLine($"Unknown command: {command}");
                 Console.WriteLine("Type 'help' for available commands.");
@@ -237,6 +241,7 @@ void PrintHelp()
     Console.WriteLine("  whisper <user> <message>  Send private message");
     Console.WriteLine("  say <message>  Send chat message");
     Console.WriteLine("  map           Request and print current chunk map");
+    Console.WriteLine("  tiles         Request tile definitions");
     Console.WriteLine("  localmap      Print map using already-known chunk data");
     Console.WriteLine("  quit          Exit client");
 }

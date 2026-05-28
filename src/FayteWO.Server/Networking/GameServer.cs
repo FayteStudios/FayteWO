@@ -14,6 +14,7 @@ public sealed class GameServer
     private readonly int _port;
     private readonly WorldMap _worldMap;
     private readonly MovementSystem _movementSystem;
+    private readonly List<TileDefinitionDto> _tileDefinitions;
     private readonly ConcurrentDictionary<Guid, PlayerState> _players = new();
     private readonly ConcurrentDictionary<Guid, ClientSession> _sessions = new();
     private readonly ConcurrentDictionary<string, Guid> _onlineUsernames = new(
@@ -28,11 +29,20 @@ public sealed class GameServer
 
         Tile grass = new Tile(1, "Grass");
         Tile wall = new Tile(2, "Stone Wall", TileFlags.BlocksMovement | TileFlags.BlocksSight);
+        Tile water = new Tile(3, "Water", TileFlags.Water | TileFlags.BlocksMovement);
 
         List<Tile> tileDefinitions =
         [
             grass,
-            wall
+            wall,
+            water
+        ];
+
+        _tileDefinitions =
+        [
+            new TileDefinitionDto(grass.TileId, grass.Name, grass.Flags, '.'),
+            new TileDefinitionDto(wall.TileId, wall.Name, wall.Flags, '#'),
+            new TileDefinitionDto(water.TileId, water.Name, water.Flags, '~')
         ];
 
         _worldMap = new WorldMap();
@@ -53,6 +63,15 @@ public sealed class GameServer
         for (int y = -3; y <= 3; y++)
         {
             _worldMap.TrySetTileId(new TilePosition(36, y, 0), wall.TileId);
+        }
+
+        // Add a small water patch for map visibility.
+        for (int y = 4; y <= 8; y++)
+        {
+            for (int x = 24; x <= 28; x++)
+            {
+                _worldMap.TrySetTileId(new TilePosition(x, y, 0), water.TileId);
+            }
         }
 
         _movementSystem = new MovementSystem(_worldMap, tileDefinitions);
@@ -348,7 +367,7 @@ public sealed class GameServer
                 PacketType.ChunkRequest => HandleChunkRequest(
                     session,
                     PacketSerializer.DeserializePayload<ChunkRequestPacket>(packet)),
-
+                PacketType.TileDefinitionsRequest => HandleTileDefinitionsRequest(session),
                 _ => PacketSerializer.Serialize(
                     PacketType.ServerMessage,
                     new ServerMessagePacket($"Unhandled packet type: {packet.Type}"))
@@ -361,6 +380,22 @@ public sealed class GameServer
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
     }    
+
+    private string HandleTileDefinitionsRequest(ClientSession session)
+    {
+        Console.WriteLine($"Session {session.SessionId}: Decoded TileDefinitionsRequest");
+
+        if (session.PlayerId is null)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Tile definitions request rejected: client is not logged in."));
+        }
+
+        TileDefinitionsPacket packet = new TileDefinitionsPacket(_tileDefinitions);
+
+        return PacketSerializer.Serialize(PacketType.TileDefinitions, packet);
+    }
 
     private string HandleChunkRequest(ClientSession session, ChunkRequestPacket packet)
     {
@@ -671,14 +706,23 @@ public sealed class GameServer
         // First, tell this new client about itself/login.
         session.SendRaw(loginResultJson);
 
+        SendTileDefinitionsToSession(session);
+
         // Then, tell the new client about already-existing players.
         SendExistingEntitiesToSession(session, player.PlayerId);
-
         // Finally, tell everyone else about the new player.
         BroadcastEntitySpawned(player, excludeSessionId: session.SessionId);
 
         // We already sent the login response manually.
         return null;
+    }
+
+    private void SendTileDefinitionsToSession(ClientSession session)
+    {
+        TileDefinitionsPacket packet = new TileDefinitionsPacket(_tileDefinitions);
+        string json = PacketSerializer.Serialize(PacketType.TileDefinitions, packet);
+
+        session.SendRaw(json);
     }
 
     private string? HandleMoveRequest(ClientSession session, MoveRequestPacket packet)

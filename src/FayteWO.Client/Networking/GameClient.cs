@@ -16,6 +16,7 @@ public sealed class GameClient
     private readonly ConcurrentDictionary<Guid, ClientEntity> _entities = new();
     public IReadOnlyCollection<ClientEntity> Entities => _entities.Values.ToArray();
     private readonly ConcurrentDictionary<ChunkPosition, ChunkDataPacket> _chunks = new();
+    private readonly ConcurrentDictionary<int, TileDefinitionDto> _tileDefinitions = new();
     private readonly ConcurrentDictionary<ChunkPosition, byte> _pendingChunkRequests = new();    private TcpClient? _client;
     private StreamReader? _reader;
     private StreamWriter? _writer;
@@ -40,6 +41,23 @@ public sealed class GameClient
     {
         ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(position);
         RequestChunkIfNeeded(chunkPosition);
+    }
+
+    public void RequestTileDefinitions()
+    {
+        if (PlayerId is null)
+        {
+            Console.WriteLine("Cannot request tile definitions before login.");
+            return;
+        }
+
+        TileDefinitionsRequestPacket request = new TileDefinitionsRequestPacket();
+        string outgoingJson = PacketSerializer.Serialize(PacketType.TileDefinitionsRequest, request);
+
+        Console.WriteLine();
+        Console.WriteLine("Requesting tile definitions.");
+
+        SendRaw(outgoingJson);
     }
 
     private void RequestChunkIfNeeded(ChunkPosition chunkPosition)
@@ -277,10 +295,25 @@ public sealed class GameClient
             case PacketType.ChunkData:
                 HandleChunkData(responsePacket);
                 break;
+            case PacketType.TileDefinitions:
+                HandleTileDefinitions(responsePacket);
+                break;
             default:
                 Console.WriteLine($"Unhandled response packet type: {responsePacket.Type}");
                 break;
         }
+    }
+
+    private void HandleTileDefinitions(NetworkPacket responsePacket)
+    {
+        TileDefinitionsPacket packet = PacketSerializer.DeserializePayload<TileDefinitionsPacket>(responsePacket);
+
+        foreach (TileDefinitionDto tile in packet.Tiles)
+        {
+            _tileDefinitions[tile.TileId] = tile;
+        }
+
+        Console.WriteLine($"Received {packet.Tiles.Count} tile definitions.");
     }
 
     private void HandleChunkData(NetworkPacket responsePacket)
@@ -380,14 +413,14 @@ public sealed class GameClient
         return true;
     }
 
-    private static char TileIdToAscii(int tileId)
+    private char TileIdToAscii(int tileId)
     {
-        return tileId switch
+        if (_tileDefinitions.TryGetValue(tileId, out TileDefinitionDto? tile))
         {
-            1 => '.',
-            2 => '#',
-            _ => '?'
-        };
+            return tile.MapSymbol;
+        }
+
+        return '?';
     }
 
     private static void HandleWhisperReceived(NetworkPacket responsePacket)
