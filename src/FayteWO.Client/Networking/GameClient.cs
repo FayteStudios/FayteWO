@@ -39,7 +39,11 @@ public sealed class GameClient
     private void RequestChunkIfNeeded(TilePosition position)
     {
         ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(position);
+        RequestChunkIfNeeded(chunkPosition);
+    }
 
+    private void RequestChunkIfNeeded(ChunkPosition chunkPosition)
+    {
         if (_chunks.ContainsKey(chunkPosition))
         {
             return;
@@ -51,6 +55,24 @@ public sealed class GameClient
         }
 
         RequestChunk(chunkPosition);
+    }
+
+    private void RequestChunksAround(TilePosition position, int radius = 1)
+    {
+        ChunkPosition centerChunk = ChunkPosition.FromWorldPosition(position);
+
+        for (int y = centerChunk.Y - radius; y <= centerChunk.Y + radius; y++)
+        {
+            for (int x = centerChunk.X - radius; x <= centerChunk.X + radius; x++)
+            {
+                ChunkPosition chunkPosition = new ChunkPosition(
+                    x,
+                    y,
+                    centerChunk.Z);
+
+                RequestChunkIfNeeded(chunkPosition);
+            }
+        }
     }
 
     private void RequestChunk(ChunkPosition chunkPosition)
@@ -72,8 +94,7 @@ public sealed class GameClient
             return;
         }
 
-        ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(Position.Value);
-        RequestChunk(chunkPosition);
+        RequestChunksAround(Position.Value);
     }
 
     public void Connect()
@@ -493,7 +514,7 @@ public sealed class GameClient
                 "You",
                 Position.Value);
 
-            RequestChunkIfNeeded(Position.Value);
+            RequestChunksAround(Position.Value);
         }
 
         Console.WriteLine($"Logged in as PlayerId={PlayerId}");
@@ -525,7 +546,7 @@ public sealed class GameClient
             Position = moved.ToPosition;
             Console.WriteLine($"Local player position updated to {Position}");
 
-            RequestChunkIfNeeded(moved.ToPosition);
+            RequestChunksAround(moved.ToPosition);
         }
     }
 

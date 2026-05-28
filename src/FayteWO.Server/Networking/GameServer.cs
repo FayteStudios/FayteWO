@@ -37,14 +37,23 @@ public sealed class GameServer
 
         _worldMap = new WorldMap();
 
-        Chunk chunk00 = CreateFilledChunk(0, 0, grass.TileId);
-        Chunk chunk10 = CreateFilledChunk(1, 0, grass.TileId);
-
-        _worldMap.AddChunk(chunk00);
-        _worldMap.AddChunk(chunk10);
+        for (int chunkY = -1; chunkY <= 1; chunkY++)
+        {
+            for (int chunkX = -1; chunkX <= 1; chunkX++)
+            {
+                Chunk chunk = CreateFilledChunk(chunkX, chunkY, grass.TileId);
+                _worldMap.AddChunk(chunk);
+            }
+        }
 
         // Block movement at world position 33,0.
         _worldMap.TrySetTileId(new TilePosition(33, 0, 0), wall.TileId);
+
+        // Add a small vertical wall for map visibility.
+        for (int y = -3; y <= 3; y++)
+        {
+            _worldMap.TrySetTileId(new TilePosition(36, y, 0), wall.TileId);
+        }
 
         _movementSystem = new MovementSystem(_worldMap, tileDefinitions);
     }
