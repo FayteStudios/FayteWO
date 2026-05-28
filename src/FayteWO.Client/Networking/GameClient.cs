@@ -142,7 +142,11 @@ public sealed class GameClient
 
                 if (responseJson is null)
                 {
-                    Console.WriteLine("Server closed the connection.");
+                    if (_isRunning)
+                    {
+                        Console.WriteLine("Server closed the connection.");
+                    }
+
                     return;
                 }
 
