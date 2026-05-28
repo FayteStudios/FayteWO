@@ -842,6 +842,27 @@ public sealed class GameClient
         }
     }
 
+    public IReadOnlyList<ChunkDataPacket> GetLoadedChunksSnapshot()
+    {
+        return _chunks.Values.ToArray();
+    }
+    public TilePosition? GetSelectedTilePosition()
+    {
+        return _selectedTilePosition;
+    }
+    public TileDefinitionDto? GetTileDefinition(int tileId)
+    {
+        if (_tileDefinitions.TryGetValue(tileId, out TileDefinitionDto? tileDefinition))
+        {
+            return tileDefinition;
+        }
+
+        return null;
+    }
+    public void InteractWithSelectedTile()
+    {
+        SendTileInteractionRequestForSelectedTarget();
+    }
     private static void HandleServerMessage(NetworkPacket responsePacket)
     {
         ServerMessagePacket message = PacketSerializer.DeserializePayload<ServerMessagePacket>(responsePacket);

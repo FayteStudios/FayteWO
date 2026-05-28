@@ -1,5 +1,5 @@
 ﻿using FayteWO.Client.Networking;
-using FayteWO.Shared.World;
+using FayteWO.Client.Rendering;
 
 const string host = "127.0.0.1";
 const int port = 7777;
@@ -22,349 +22,35 @@ try
         Thread.Sleep(50);
     }
 
-    PrintHelp();
+    Console.WriteLine("Login complete.");
+    Console.WriteLine("Opening FayteWO visual client.");
+    Console.WriteLine("Controls:");
+    Console.WriteLine("  WASD / Arrow Keys = move");
+    Console.WriteLine("  Left Click        = select tile");
+    Console.WriteLine("  Right Click       = select and interact");
+    Console.WriteLine("  E                 = interact with selected tile");
+    Console.WriteLine("  Escape            = close window");
 
-    while (true)
-    {
-        Console.WriteLine();
-        Console.Write("> ");
-
-        string? input = Console.ReadLine();
-
-        if (input is null)
-        {
-            continue;
-        }
-
-        input = input.Trim();
-
-        if (string.IsNullOrWhiteSpace(input))
-        {
-            continue;
-        }
-
-        string[] parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        string command = parts[0].ToLowerInvariant();
-
-        switch (command)
-        {
-            case "move":
-            case "m":
-                HandleMoveCommand(parts);
-                break;
-
-            case "north":
-            case "n":
-                client.SendMoveRequest(Direction.North);
-                break;
-
-            case "east":
-            case "e":
-                client.SendMoveRequest(Direction.East);
-                break;
-
-            case "south":
-            case "s":
-                client.SendMoveRequest(Direction.South);
-                break;
-
-            case "west":
-            case "w":
-                client.SendMoveRequest(Direction.West);
-                break;
-
-            case "pos":
-            case "position":
-                Console.WriteLine($"Current local position: {client.Position}");
-                break;
-
-            case "help":
-            case "h":
-                PrintHelp();
-                break;
-
-            case "quit":
-            case "exit":
-            case "q":
-                Console.WriteLine("Quitting client.");
-                return;
-            case "entities":
-            case "ents":
-                client.PrintKnownEntities();
-                break;
-                case "say":
-            case "chat":
-                HandleChatCommand(parts);
-                break;
-                case "whisper":
-            case "tell":
-            case "wsp":
-            case "pm":
-                HandleWhisperCommand(parts);
-                break;
-            case "map":
-                client.RequestCurrentChunk();
-                break;
-
-            case "localmap":
-                client.PrintMapAroundPlayer();
-                break;
-
-            case "chunks":
-                client.PrintLoadedChunks();
-                break;
-
-            case "tiles":
-                client.RequestTileDefinitions();
-                break;
-
-            case "settile":
-                HandleSetTileCommand(parts);
-                break;
-
-            case "target":
-                HandleTargetCommand(parts);
-                break;
-
-            case "cleartarget":
-                client.ClearSelectedTilePosition();
-                break;
-
-            case "targetinfo":
-                client.PrintSelectedTilePosition();
-                break;
-
-            case "interact":
-                HandleInteractCommand(parts);
-                break;
-            default:
-                Console.WriteLine($"Unknown command: {command}");
-                Console.WriteLine("Type 'help' for available commands.");
-                break;
-        }
-    }
+    using FayteGame game = new FayteGame(client);
+    game.Run();
 }
 finally
 {
     client.Disconnect();
 }
 
-void HandleTargetCommand(string[] parts)
-{
-    if (parts.Length < 3)
-    {
-        Console.WriteLine("Usage: target <x> <y>");
-        Console.WriteLine("Example: target 33 0");
-        return;
-    }
-
-    if (!int.TryParse(parts[1], out int x))
-    {
-        Console.WriteLine($"Invalid x coordinate: {parts[1]}");
-        return;
-    }
-
-    if (!int.TryParse(parts[2], out int y))
-    {
-        Console.WriteLine($"Invalid y coordinate: {parts[2]}");
-        return;
-    }
-
-    TilePosition position = new TilePosition(x, y, 0);
-
-    client.SetSelectedTilePosition(position);
-}
-
-void HandleInteractCommand(string[] parts)
-{
-    if (parts.Length == 1)
-    {
-        client.SendTileInteractionRequestForSelectedTarget();
-        return;
-    }
-
-    if (parts.Length < 3)
-    {
-        Console.WriteLine("Usage: interact");
-        Console.WriteLine("Usage: interact <x> <y>");
-        Console.WriteLine("Tip: use 'target <x> <y>' first, then 'interact'.");
-        return;
-    }
-
-    if (!int.TryParse(parts[1], out int x))
-    {
-        Console.WriteLine($"Invalid x coordinate: {parts[1]}");
-        return;
-    }
-
-    if (!int.TryParse(parts[2], out int y))
-    {
-        Console.WriteLine($"Invalid y coordinate: {parts[2]}");
-        return;
-    }
-
-    TilePosition position = new TilePosition(x, y, 0);
-
-    client.SetSelectedTilePosition(position);
-    client.SendTileInteractionRequest(position);
-}
-
-string PromptForUsername()
+static string PromptForUsername()
 {
     while (true)
     {
-        Console.Write("Enter username: ");
+        Console.Write("Username: ");
+        string? username = Console.ReadLine();
 
-        string? input = Console.ReadLine();
-
-        if (string.IsNullOrWhiteSpace(input))
+        if (!string.IsNullOrWhiteSpace(username))
         {
-            Console.WriteLine("Username cannot be empty.");
-            continue;
+            return username.Trim();
         }
 
-        string username = input.Trim();
-
-        if (username.Length > 20)
-        {
-            Console.WriteLine("Username cannot be longer than 20 characters.");
-            continue;
-        }
-
-        return username;
+        Console.WriteLine("Username cannot be empty.");
     }
-}
-
-void HandleSetTileCommand(string[] parts)
-{
-    if (parts.Length < 4)
-    {
-        Console.WriteLine("Usage: settile <x> <y> <tileId>");
-        Console.WriteLine("Example: settile 33 0 1");
-        return;
-    }
-
-    if (!int.TryParse(parts[1], out int x))
-    {
-        Console.WriteLine($"Invalid x coordinate: {parts[1]}");
-        return;
-    }
-
-    if (!int.TryParse(parts[2], out int y))
-    {
-        Console.WriteLine($"Invalid y coordinate: {parts[2]}");
-        return;
-    }
-
-    if (!int.TryParse(parts[3], out int tileId))
-    {
-        Console.WriteLine($"Invalid tile ID: {parts[3]}");
-        return;
-    }
-
-    TilePosition position = new TilePosition(x, y, 0);
-
-    client.SendTileChangeRequest(position, tileId);
-}
-
-void HandleChatCommand(string[] parts)
-{
-    if (parts.Length < 2)
-    {
-        Console.WriteLine("Usage: say your message here");
-        return;
-    }
-
-    string message = string.Join(' ', parts.Skip(1));
-
-    client.SendChatMessage(message);
-}
-
-void HandleWhisperCommand(string[] parts)
-{
-    if (parts.Length < 3)
-    {
-        Console.WriteLine("Usage: whisper <username> <message>");
-        return;
-    }
-
-    string targetUsername = parts[1];
-    string message = string.Join(' ', parts.Skip(2));
-
-    client.SendWhisperMessage(targetUsername, message);
-}
-
-void HandleMoveCommand(string[] parts)
-{
-    if (parts.Length < 2)
-    {
-        Console.WriteLine("Usage: move north|east|south|west");
-        return;
-    }
-
-    if (!TryParseDirection(parts[1], out Direction direction))
-    {
-        Console.WriteLine($"Unknown direction: {parts[1]}");
-        Console.WriteLine("Use north, east, south, or west.");
-        return;
-    }
-
-    client.SendMoveRequest(direction);
-}
-
-bool TryParseDirection(string value, out Direction direction)
-{
-    switch (value.ToLowerInvariant())
-    {
-        case "north":
-        case "n":
-            direction = Direction.North;
-            return true;
-
-        case "east":
-        case "e":
-            direction = Direction.East;
-            return true;
-
-        case "south":
-        case "s":
-            direction = Direction.South;
-            return true;
-
-        case "west":
-        case "w":
-            direction = Direction.West;
-            return true;
-
-        default:
-            direction = Direction.North;
-            return false;
-    }
-}
-
-void PrintHelp()
-{
-    Console.WriteLine();
-    Console.WriteLine("Available commands:");
-    Console.WriteLine("  move north    Move north");
-    Console.WriteLine("  move east     Move east");
-    Console.WriteLine("  move south    Move south");
-    Console.WriteLine("  move west     Move west");
-    Console.WriteLine("  n/e/s/w       Shortcut movement commands");
-    Console.WriteLine("  pos           Print current local player position");
-    Console.WriteLine("  help          Show commands");
-    Console.WriteLine("  entities      Print known entities");
-    Console.WriteLine("  whisper <user> <message>  Send private message");
-    Console.WriteLine("  say <message>  Send chat message");
-    Console.WriteLine("  map           Request and print current chunk map");
-    Console.WriteLine("  tiles         Request tile definitions");
-    Console.WriteLine("  localmap      Print map using already-known chunk data");
-    Console.WriteLine("  settile <x> <y> <tileId>  Debug-change a world tile");
-    Console.WriteLine("  interact <x> <y>  Interact with a nearby world tile");
-    Console.WriteLine("  target <x> <y>        Select a world tile target");
-    Console.WriteLine("  targetinfo            Print selected tile target info");
-    Console.WriteLine("  cleartarget           Clear selected tile target");
-    Console.WriteLine("  interact              Interact with selected tile target");
-    Console.WriteLine("  interact <x> <y>      Select and interact with a nearby tile");
-    Console.WriteLine("  chunks        Print loaded client chunks");Console.WriteLine("  quit          Exit client");
 }
