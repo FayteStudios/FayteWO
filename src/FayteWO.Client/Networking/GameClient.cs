@@ -3,6 +3,8 @@ using System.Text;
 using FayteWO.Shared.Networking;
 using FayteWO.Shared.Networking.Packets;
 using FayteWO.Shared.World;
+using System.Collections.Concurrent;
+using FayteWO.Client.Entities;
 
 namespace FayteWO.Client.Networking;
 
@@ -11,7 +13,9 @@ public sealed class GameClient
     private readonly string _host;
     private readonly int _port;
     private readonly object _sendLock = new();
-
+    private readonly ConcurrentDictionary<Guid, ClientEntity> _entities = new();
+    public IReadOnlyCollection<ClientEntity> Entities => _entities.Values.ToArray();
+    
     private TcpClient? _client;
     private StreamReader? _reader;
     private StreamWriter? _writer;
@@ -213,14 +217,45 @@ public sealed class GameClient
     {
         EntitySpawnedPacket spawned = PacketSerializer.DeserializePayload<EntitySpawnedPacket>(responsePacket);
 
-        Console.WriteLine($"Entity spawned: {spawned.Name} [{spawned.EntityId}] at {spawned.Position}");
+        if (PlayerId == spawned.EntityId)
+        {
+            return;
+        }
+
+        ClientEntity entity = new ClientEntity(
+            spawned.EntityId,
+            spawned.Name,
+            spawned.Position);
+
+        _entities[spawned.EntityId] = entity;
+
+        Console.WriteLine($"Entity spawned: {entity}");
     }
 
     private void HandleEntityDespawned(NetworkPacket responsePacket)
     {
         EntityDespawnedPacket despawned = PacketSerializer.DeserializePayload<EntityDespawnedPacket>(responsePacket);
 
-        Console.WriteLine($"Entity despawned: {despawned.EntityId}. Reason: {despawned.Reason}");
+        if (_entities.TryRemove(despawned.EntityId, out ClientEntity? removedEntity))
+        {
+            Console.WriteLine($"Entity despawned: {removedEntity.Name} [{removedEntity.EntityId}]. Reason: {despawned.Reason}");
+        }
+        else
+        {
+            Console.WriteLine($"Entity despawned: {despawned.EntityId}. Reason: {despawned.Reason}");
+        }
+    }
+
+    public void PrintKnownEntities()
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Known entities: {_entities.Count}");
+
+        foreach (ClientEntity entity in _entities.Values.OrderBy(entity => entity.Name))
+        {
+            string marker = PlayerId == entity.EntityId ? "local" : "remote";
+            Console.WriteLine($"  [{marker}] {entity}");
+        }
     }
 
     private void HandleLoginResult(NetworkPacket responsePacket)
@@ -237,6 +272,13 @@ public sealed class GameClient
 
         PlayerId = loginResult.PlayerId.Value;
         Position = loginResult.SpawnPosition;
+        if (Position is not null)
+        {
+            _entities[PlayerId.Value] = new ClientEntity(
+                PlayerId.Value,
+                "You",
+                Position.Value);
+        }
 
         Console.WriteLine($"Logged in as PlayerId={PlayerId}");
         Console.WriteLine($"Spawn position={Position}");
@@ -246,7 +288,21 @@ public sealed class GameClient
     {
         EntityMovedPacket moved = PacketSerializer.DeserializePayload<EntityMovedPacket>(responsePacket);
 
-        Console.WriteLine($"Entity {moved.EntityId} moved from {moved.FromPosition} to {moved.ToPosition}");
+        if (_entities.TryGetValue(moved.EntityId, out ClientEntity? entity))
+        {
+            entity.SetPosition(moved.ToPosition);
+        }
+        else
+        {
+            entity = new ClientEntity(
+                moved.EntityId,
+                "Unknown Entity",
+                moved.ToPosition);
+
+            _entities[moved.EntityId] = entity;
+        }
+
+        Console.WriteLine($"Entity {entity.Name} [{entity.EntityId}] moved from {moved.FromPosition} to {moved.ToPosition}");
 
         if (PlayerId == moved.EntityId)
         {

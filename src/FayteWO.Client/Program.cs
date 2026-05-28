@@ -86,7 +86,10 @@ try
             case "q":
                 Console.WriteLine("Quitting client.");
                 return;
-
+            case "entities":
+            case "ents":
+                client.PrintKnownEntities();
+                break;
             default:
                 Console.WriteLine($"Unknown command: {command}");
                 Console.WriteLine("Type 'help' for available commands.");
@@ -158,5 +161,6 @@ void PrintHelp()
     Console.WriteLine("  n/e/s/w       Shortcut movement commands");
     Console.WriteLine("  pos           Print current local player position");
     Console.WriteLine("  help          Show commands");
+    Console.WriteLine("  entities      Print known entities");
     Console.WriteLine("  quit          Exit client");
 }
