@@ -16,7 +16,7 @@ public sealed class GameClient
     private readonly ConcurrentDictionary<Guid, ClientEntity> _entities = new();
     public IReadOnlyCollection<ClientEntity> Entities => _entities.Values.ToArray();
     private readonly ConcurrentDictionary<ChunkPosition, ChunkDataPacket> _chunks = new();
-    private TcpClient? _client;
+    private readonly ConcurrentDictionary<ChunkPosition, byte> _pendingChunkRequests = new();    private TcpClient? _client;
     private StreamReader? _reader;
     private StreamWriter? _writer;
     private Thread? _receiveThread;
@@ -36,6 +36,34 @@ public sealed class GameClient
         _port = port;
     }
 
+    private void RequestChunkIfNeeded(TilePosition position)
+    {
+        ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(position);
+
+        if (_chunks.ContainsKey(chunkPosition))
+        {
+            return;
+        }
+
+        if (!_pendingChunkRequests.TryAdd(chunkPosition, 0))
+        {
+            return;
+        }
+
+        RequestChunk(chunkPosition);
+    }
+
+    private void RequestChunk(ChunkPosition chunkPosition)
+    {
+        ChunkRequestPacket request = new ChunkRequestPacket(chunkPosition);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.ChunkRequest, request);
+
+        Console.WriteLine();
+        Console.WriteLine($"Requesting chunk {chunkPosition}");
+
+        SendRaw(outgoingJson);
+    }
+
     public void RequestCurrentChunk()
     {
         if (PlayerId is null || Position is null)
@@ -45,14 +73,7 @@ public sealed class GameClient
         }
 
         ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(Position.Value);
-
-        ChunkRequestPacket request = new ChunkRequestPacket(chunkPosition);
-        string outgoingJson = PacketSerializer.Serialize(PacketType.ChunkRequest, request);
-
-        Console.WriteLine();
-        Console.WriteLine($"Requesting chunk {chunkPosition}");
-
-        SendRaw(outgoingJson);
+        RequestChunk(chunkPosition);
     }
 
     public void Connect()
@@ -246,7 +267,7 @@ public sealed class GameClient
         ChunkDataPacket chunkData = PacketSerializer.DeserializePayload<ChunkDataPacket>(responsePacket);
 
         _chunks[chunkData.ChunkPosition] = chunkData;
-
+        _pendingChunkRequests.TryRemove(chunkData.ChunkPosition, out _);
         Console.WriteLine($"Received chunk {chunkData.ChunkPosition} with {chunkData.TileIds.Length} tiles.");
 
         PrintMapAroundPlayer(radius: 8);
@@ -464,12 +485,15 @@ public sealed class GameClient
 
         PlayerId = loginResult.PlayerId.Value;
         Position = loginResult.SpawnPosition;
+
         if (Position is not null)
         {
             _entities[PlayerId.Value] = new ClientEntity(
                 PlayerId.Value,
                 "You",
                 Position.Value);
+
+            RequestChunkIfNeeded(Position.Value);
         }
 
         Console.WriteLine($"Logged in as PlayerId={PlayerId}");
@@ -500,6 +524,8 @@ public sealed class GameClient
         {
             Position = moved.ToPosition;
             Console.WriteLine($"Local player position updated to {Position}");
+
+            RequestChunkIfNeeded(moved.ToPosition);
         }
     }
 
