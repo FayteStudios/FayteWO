@@ -73,4 +73,24 @@ public sealed class WorldMap
         chunk.SetTileId(localX, localY, tileId, localZ);
         return true;
     }
+
+    public IReadOnlyList<WorldTile> GetTilesInRange(int centerX, int centerY, int radius, int z = 0)
+    {
+        List<WorldTile> tilesInRange = new();
+
+        for (int x = centerX - radius; x <= centerX + radius; x++)
+        {
+            for (int y = centerY - radius; y <= centerY + radius; y++)
+            {
+                TilePosition position = new TilePosition(x, y, z);
+
+                if (TryGetTileId(position, out int tileId))
+                {
+                    tilesInRange.Add(new WorldTile(x, y, (ushort)tileId));
+                }
+            }
+        }
+
+        return tilesInRange;
+    }
 }

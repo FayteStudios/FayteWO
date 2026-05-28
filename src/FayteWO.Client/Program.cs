@@ -110,8 +110,32 @@ try
                 client.PrintMapAroundPlayer();
                 break;
 
+            case "chunks":
+                client.PrintLoadedChunks();
+                break;
+
             case "tiles":
                 client.RequestTileDefinitions();
+                break;
+
+            case "settile":
+                HandleSetTileCommand(parts);
+                break;
+
+            case "target":
+                HandleTargetCommand(parts);
+                break;
+
+            case "cleartarget":
+                client.ClearSelectedTilePosition();
+                break;
+
+            case "targetinfo":
+                client.PrintSelectedTilePosition();
+                break;
+
+            case "interact":
+                HandleInteractCommand(parts);
                 break;
             default:
                 Console.WriteLine($"Unknown command: {command}");
@@ -123,6 +147,66 @@ try
 finally
 {
     client.Disconnect();
+}
+
+void HandleTargetCommand(string[] parts)
+{
+    if (parts.Length < 3)
+    {
+        Console.WriteLine("Usage: target <x> <y>");
+        Console.WriteLine("Example: target 33 0");
+        return;
+    }
+
+    if (!int.TryParse(parts[1], out int x))
+    {
+        Console.WriteLine($"Invalid x coordinate: {parts[1]}");
+        return;
+    }
+
+    if (!int.TryParse(parts[2], out int y))
+    {
+        Console.WriteLine($"Invalid y coordinate: {parts[2]}");
+        return;
+    }
+
+    TilePosition position = new TilePosition(x, y, 0);
+
+    client.SetSelectedTilePosition(position);
+}
+
+void HandleInteractCommand(string[] parts)
+{
+    if (parts.Length == 1)
+    {
+        client.SendTileInteractionRequestForSelectedTarget();
+        return;
+    }
+
+    if (parts.Length < 3)
+    {
+        Console.WriteLine("Usage: interact");
+        Console.WriteLine("Usage: interact <x> <y>");
+        Console.WriteLine("Tip: use 'target <x> <y>' first, then 'interact'.");
+        return;
+    }
+
+    if (!int.TryParse(parts[1], out int x))
+    {
+        Console.WriteLine($"Invalid x coordinate: {parts[1]}");
+        return;
+    }
+
+    if (!int.TryParse(parts[2], out int y))
+    {
+        Console.WriteLine($"Invalid y coordinate: {parts[2]}");
+        return;
+    }
+
+    TilePosition position = new TilePosition(x, y, 0);
+
+    client.SetSelectedTilePosition(position);
+    client.SendTileInteractionRequest(position);
 }
 
 string PromptForUsername()
@@ -149,6 +233,38 @@ string PromptForUsername()
 
         return username;
     }
+}
+
+void HandleSetTileCommand(string[] parts)
+{
+    if (parts.Length < 4)
+    {
+        Console.WriteLine("Usage: settile <x> <y> <tileId>");
+        Console.WriteLine("Example: settile 33 0 1");
+        return;
+    }
+
+    if (!int.TryParse(parts[1], out int x))
+    {
+        Console.WriteLine($"Invalid x coordinate: {parts[1]}");
+        return;
+    }
+
+    if (!int.TryParse(parts[2], out int y))
+    {
+        Console.WriteLine($"Invalid y coordinate: {parts[2]}");
+        return;
+    }
+
+    if (!int.TryParse(parts[3], out int tileId))
+    {
+        Console.WriteLine($"Invalid tile ID: {parts[3]}");
+        return;
+    }
+
+    TilePosition position = new TilePosition(x, y, 0);
+
+    client.SendTileChangeRequest(position, tileId);
 }
 
 void HandleChatCommand(string[] parts)
@@ -243,5 +359,12 @@ void PrintHelp()
     Console.WriteLine("  map           Request and print current chunk map");
     Console.WriteLine("  tiles         Request tile definitions");
     Console.WriteLine("  localmap      Print map using already-known chunk data");
-    Console.WriteLine("  quit          Exit client");
+    Console.WriteLine("  settile <x> <y> <tileId>  Debug-change a world tile");
+    Console.WriteLine("  interact <x> <y>  Interact with a nearby world tile");
+    Console.WriteLine("  target <x> <y>        Select a world tile target");
+    Console.WriteLine("  targetinfo            Print selected tile target info");
+    Console.WriteLine("  cleartarget           Clear selected tile target");
+    Console.WriteLine("  interact              Interact with selected tile target");
+    Console.WriteLine("  interact <x> <y>      Select and interact with a nearby tile");
+    Console.WriteLine("  chunks        Print loaded client chunks");Console.WriteLine("  quit          Exit client");
 }

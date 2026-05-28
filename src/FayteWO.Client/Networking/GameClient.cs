@@ -21,6 +21,7 @@ public sealed class GameClient
     private StreamReader? _reader;
     private StreamWriter? _writer;
     private Thread? _receiveThread;
+    private TilePosition? _selectedTilePosition;
     private bool _isRunning;
 
     public Guid? PlayerId { get; private set; }
@@ -41,6 +42,72 @@ public sealed class GameClient
     {
         ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(position);
         RequestChunkIfNeeded(chunkPosition);
+    }
+
+    public void SetSelectedTilePosition(TilePosition position)
+    {
+        _selectedTilePosition = position;
+
+        Console.WriteLine();
+        Console.WriteLine($"Selected tile target: {position}");
+
+        if (TryGetKnownTileId(position, out int tileId))
+        {
+            char symbol = TileIdToAscii(tileId);
+            Console.WriteLine($"Selected tile info: TileId={tileId}, Symbol={symbol}");
+        }
+        else
+        {
+            Console.WriteLine("Selected tile info: tile is not loaded locally yet.");
+            RequestChunkIfNeeded(position);
+        }
+    }
+
+    public void ClearSelectedTilePosition()
+    {
+        if (_selectedTilePosition is null)
+        {
+            Console.WriteLine("No tile target is currently selected.");
+            return;
+        }
+
+        Console.WriteLine($"Cleared selected tile target: {_selectedTilePosition.Value}");
+        _selectedTilePosition = null;
+    }
+
+    public void PrintSelectedTilePosition()
+    {
+        if (_selectedTilePosition is null)
+        {
+            Console.WriteLine("No tile target is currently selected.");
+            return;
+        }
+
+        TilePosition selectedPosition = _selectedTilePosition.Value;
+
+        Console.WriteLine();
+        Console.WriteLine($"Selected tile target: {selectedPosition}");
+
+        if (TryGetKnownTileId(selectedPosition, out int tileId))
+        {
+            char symbol = TileIdToAscii(tileId);
+            Console.WriteLine($"Selected tile info: TileId={tileId}, Symbol={symbol}");
+        }
+        else
+        {
+            Console.WriteLine("Selected tile info: tile is not loaded locally.");
+        }
+    }
+
+    public void SendTileInteractionRequestForSelectedTarget()
+    {
+        if (_selectedTilePosition is null)
+        {
+            Console.WriteLine("No tile target selected. Use: target <x> <y>");
+            return;
+        }
+
+        SendTileInteractionRequest(_selectedTilePosition.Value);
     }
 
     public void RequestTileDefinitions()
@@ -238,8 +305,7 @@ public sealed class GameClient
                     continue;
                 }
 
-                Console.WriteLine();
-                Console.WriteLine($"Received packet: {responseJson}");
+                PrintIncomingPacketSummary(responseJson);
 
                 HandleServerResponse(responseJson);
             }
@@ -263,6 +329,34 @@ public sealed class GameClient
         }
     }
 
+    private static void PrintIncomingPacketSummary(string responseJson)
+    {
+        try
+        {
+            NetworkPacket packet = PacketSerializer.DeserializeEnvelope(responseJson);
+
+            if (packet.Type == PacketType.ChunkData)
+            {
+                ChunkDataPacket chunkData = PacketSerializer.DeserializePayload<ChunkDataPacket>(packet);
+
+                Console.WriteLine();
+                Console.WriteLine(
+                    $"Received packet: ChunkData {chunkData.ChunkPosition} " +
+                    $"Size={chunkData.Size} Height={chunkData.Height} Tiles={chunkData.TileIds.Length}");
+
+                return;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"Received packet: {packet.Type}");
+        }
+        catch
+        {
+            Console.WriteLine();
+            Console.WriteLine($"Received packet: {responseJson}");
+        }
+    }
+
     private void HandleServerResponse(string responseJson)
     {
         NetworkPacket responsePacket = PacketSerializer.DeserializeEnvelope(responseJson);
@@ -280,28 +374,132 @@ public sealed class GameClient
             case PacketType.ServerMessage:
                 HandleServerMessage(responsePacket);
                 break;
-                case PacketType.EntitySpawned:
-                    HandleEntitySpawned(responsePacket);
-                    break;
+
+            case PacketType.EntitySpawned:
+                HandleEntitySpawned(responsePacket);
+                break;
+
             case PacketType.EntityDespawned:
                 HandleEntityDespawned(responsePacket);
                 break;
+
             case PacketType.ChatBroadcast:
                 HandleChatBroadcast(responsePacket);
                 break;
+
             case PacketType.WhisperReceived:
                 HandleWhisperReceived(responsePacket);
                 break;
+
             case PacketType.ChunkData:
                 HandleChunkData(responsePacket);
                 break;
+
             case PacketType.TileDefinitions:
                 HandleTileDefinitions(responsePacket);
                 break;
+
+            case PacketType.TileChanged:
+                HandleTileChanged(responsePacket);
+                break;
+
             default:
                 Console.WriteLine($"Unhandled response packet type: {responsePacket.Type}");
                 break;
         }
+    }
+
+    public void SendTileChangeRequest(TilePosition position, int tileId)
+    {
+        if (PlayerId is null)
+        {
+            Console.WriteLine("Cannot change tile before login.");
+            return;
+        }
+
+        TileChangeRequestPacket request = new TileChangeRequestPacket(
+            position,
+            tileId);
+
+        string outgoingJson = PacketSerializer.Serialize(PacketType.TileChangeRequest, request);
+
+        Console.WriteLine();
+        Console.WriteLine($"Sending TileChangeRequest: Position={position}, TileId={tileId}");
+
+        SendRaw(outgoingJson);
+    }
+
+    private void HandleTileChanged(NetworkPacket responsePacket)
+    {
+        TileChangedPacket packet = PacketSerializer.DeserializePayload<TileChangedPacket>(responsePacket);
+
+        bool applied = TryApplyTileChangeToKnownChunk(packet.Position, packet.TileId);
+
+        if (applied)
+        {
+            Console.WriteLine($"Tile changed locally at {packet.Position} to TileId={packet.TileId}.");
+        }
+        else
+        {
+            Console.WriteLine(
+                $"Tile changed at {packet.Position} to TileId={packet.TileId}, but the chunk is not loaded locally.");
+
+            RequestChunkIfNeeded(packet.Position);
+        }
+    }
+
+    public void SendTileInteractionRequest(TilePosition position)
+    {
+        if (PlayerId is null)
+        {
+            Console.WriteLine("Cannot interact before login.");
+            return;
+        }
+
+        TileInteractionRequestPacket request = new TileInteractionRequestPacket(position);
+
+        string outgoingJson = PacketSerializer.Serialize(PacketType.TileInteractionRequest, request);
+
+        Console.WriteLine();
+        Console.WriteLine($"Sending TileInteractionRequest: Position={position}");
+
+        SendRaw(outgoingJson);
+    }
+
+    private bool TryApplyTileChangeToKnownChunk(TilePosition worldPosition, int tileId)
+    {
+        ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(worldPosition);
+
+        if (!_chunks.TryGetValue(chunkPosition, out ChunkDataPacket? chunkData))
+        {
+            return false;
+        }
+
+        int localX = Chunk.WorldToLocalCoordinate(worldPosition.X);
+        int localY = Chunk.WorldToLocalCoordinate(worldPosition.Y);
+        int localZ = worldPosition.Z - chunkData.ChunkPosition.Z;
+
+        if (localX < 0 ||
+            localX >= chunkData.Size ||
+            localY < 0 ||
+            localY >= chunkData.Size ||
+            localZ < 0 ||
+            localZ >= chunkData.Height)
+        {
+            return false;
+        }
+
+        int index = (localZ * chunkData.Size * chunkData.Size) +
+                    (localY * chunkData.Size) +
+                    localX;
+
+        if (index < 0 || index >= chunkData.TileIds.Length)
+        {
+            return false;
+        }
+
+        chunkData.TileIds[index] = tileId;
+        return true;
     }
 
     private void HandleTileDefinitions(NetworkPacket responsePacket)
@@ -314,6 +512,12 @@ public sealed class GameClient
         }
 
         Console.WriteLine($"Received {packet.Tiles.Count} tile definitions.");
+
+        foreach (TileDefinitionDto tile in packet.Tiles.OrderBy(tile => tile.TileId))
+        {
+            Console.WriteLine(
+                $"  {tile.TileId}: {tile.MapSymbol} = {tile.Name} [{tile.Flags}]");
+        }
     }
 
     private void HandleChunkData(NetworkPacket responsePacket)
@@ -322,9 +526,31 @@ public sealed class GameClient
 
         _chunks[chunkData.ChunkPosition] = chunkData;
         _pendingChunkRequests.TryRemove(chunkData.ChunkPosition, out _);
-        Console.WriteLine($"Received chunk {chunkData.ChunkPosition} with {chunkData.TileIds.Length} tiles.");
 
-        PrintMapAroundPlayer(radius: 8);
+        Console.WriteLine(
+            $"Stored chunk {chunkData.ChunkPosition}. " +
+            $"Loaded chunks: {_chunks.Count}. " +
+            $"Pending chunk requests: {_pendingChunkRequests.Count}.");
+    }
+
+    public void PrintLoadedChunks()
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Loaded chunks: {_chunks.Count}");
+
+        foreach (KeyValuePair<ChunkPosition, ChunkDataPacket> entry in _chunks
+                    .OrderBy(entry => entry.Key.Z)
+                    .ThenBy(entry => entry.Key.Y)
+                    .ThenBy(entry => entry.Key.X))
+        {
+            ChunkPosition position = entry.Key;
+            ChunkDataPacket chunk = entry.Value;
+
+            Console.WriteLine(
+                $"  {position} | Size={chunk.Size} Height={chunk.Height} Tiles={chunk.TileIds.Length}");
+        }
+
+        Console.WriteLine($"Pending chunk requests: {_pendingChunkRequests.Count}");
     }
 
     public void PrintMapAroundPlayer(int radius = 8)
@@ -335,10 +561,19 @@ public sealed class GameClient
             return;
         }
 
+        if (_tileDefinitions.IsEmpty)
+        {
+            Console.WriteLine("Tile definitions have not been received yet. Requesting tile definitions now.");
+            RequestTileDefinitions();
+        }
+
         TilePosition center = Position.Value;
 
         Console.WriteLine();
         Console.WriteLine($"Map around {center}:");
+        Console.WriteLine("Legend: @=you, X=selected, P=player, ?=unknown/unloaded");
+
+        HashSet<ChunkPosition> missingChunks = new();
 
         for (int y = center.Y - radius; y <= center.Y + radius; y++)
         {
@@ -349,6 +584,12 @@ public sealed class GameClient
                 if (position == center)
                 {
                     Console.Write('@');
+                    continue;
+                }
+
+                if (_selectedTilePosition is not null && position == _selectedTilePosition.Value)
+                {
+                    Console.Write('X');
                     continue;
                 }
 
@@ -367,11 +608,29 @@ public sealed class GameClient
                 }
                 else
                 {
+                    ChunkPosition missingChunkPosition = ChunkPosition.FromWorldPosition(position);
+                    missingChunks.Add(missingChunkPosition);
                     Console.Write('?');
                 }
             }
 
             Console.WriteLine();
+        }
+
+        if (missingChunks.Count == 0)
+        {
+            return;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Map has unloaded tiles from {missingChunks.Count} missing chunk(s). Requesting missing chunks now.");
+
+        foreach (ChunkPosition missingChunk in missingChunks
+                    .OrderBy(chunk => chunk.Z)
+                    .ThenBy(chunk => chunk.Y)
+                    .ThenBy(chunk => chunk.X))
+        {
+            RequestChunkIfNeeded(missingChunk);
         }
     }
 

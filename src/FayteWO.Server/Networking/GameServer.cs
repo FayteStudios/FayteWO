@@ -11,8 +11,11 @@ namespace FayteWO.Server.Networking;
 
 public sealed class GameServer
 {
+    private const int GrassTileId = 1;
+    private const int WallTileId = 2;
+    private const int WaterTileId = 3;
     private readonly int _port;
-    private readonly WorldMap _worldMap;
+    private readonly WorldMap _worldMap = new();
     private readonly MovementSystem _movementSystem;
     private readonly List<TileDefinitionDto> _tileDefinitions;
     private readonly ConcurrentDictionary<Guid, PlayerState> _players = new();
@@ -44,8 +47,6 @@ public sealed class GameServer
             new TileDefinitionDto(wall.TileId, wall.Name, wall.Flags, '#'),
             new TileDefinitionDto(water.TileId, water.Name, water.Flags, '~')
         ];
-
-        _worldMap = new WorldMap();
 
         for (int chunkY = -1; chunkY <= 1; chunkY++)
         {
@@ -79,6 +80,10 @@ public sealed class GameServer
 
     public void Start()
     {
+        IReadOnlyList<WorldTile> startingTiles = _worldMap.GetTilesInRange(0, 0, 3);
+
+        Console.WriteLine("World map generated.");
+        Console.WriteLine($"Loaded {startingTiles.Count} starting tiles around spawn.");
         Console.WriteLine("FayteWO Server Starting...");
         Console.WriteLine($"Listening on 127.0.0.1:{_port}");
         Console.WriteLine("Start one or more FayteWO.Client instances in other terminals.");
@@ -91,6 +96,35 @@ public sealed class GameServer
 
         Task.Run(AcceptClientsLoop);
         RunConsoleCommandLoop();
+    }
+
+    private void SendSpawnChunkToSession(ClientSession session, TilePosition spawnPosition)
+    {
+        ChunkPosition spawnChunkPosition = ChunkPosition.FromWorldPosition(spawnPosition);
+
+        if (!_worldMap.TryGetChunk(spawnChunkPosition, out Chunk? chunk) || chunk is null)
+        {
+            ServerMessagePacket errorPacket = new ServerMessagePacket(
+                $"Spawn chunk {spawnChunkPosition} is not loaded.");
+
+            string errorJson = PacketSerializer.Serialize(PacketType.ServerMessage, errorPacket);
+
+            session.SendRaw(errorJson);
+            return;
+        }
+
+        ChunkDataPacket chunkData = new ChunkDataPacket(
+            spawnChunkPosition,
+            Chunk.Size,
+            chunk.Height,
+            chunk.ToFlatTileIdArray());
+
+        string chunkJson = PacketSerializer.Serialize(PacketType.ChunkData, chunkData);
+
+        session.SendRaw(chunkJson);
+
+        Console.WriteLine(
+            $"Session {session.SessionId}: Sent spawn chunk {spawnChunkPosition} to client.");
     }
 
     private void SendExistingEntitiesToSession(ClientSession session, Guid newPlayerId)
@@ -367,7 +401,17 @@ public sealed class GameServer
                 PacketType.ChunkRequest => HandleChunkRequest(
                     session,
                     PacketSerializer.DeserializePayload<ChunkRequestPacket>(packet)),
+
                 PacketType.TileDefinitionsRequest => HandleTileDefinitionsRequest(session),
+
+                PacketType.TileChangeRequest => HandleTileChangeRequest(
+                    session,
+                    PacketSerializer.DeserializePayload<TileChangeRequestPacket>(packet)),
+
+                PacketType.TileInteractionRequest => HandleTileInteractionRequest(
+                    session,
+                    PacketSerializer.DeserializePayload<TileInteractionRequestPacket>(packet)),
+
                 _ => PacketSerializer.Serialize(
                     PacketType.ServerMessage,
                     new ServerMessagePacket($"Unhandled packet type: {packet.Type}"))
@@ -379,7 +423,142 @@ public sealed class GameServer
                 PacketType.ServerMessage,
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
-    }    
+    }
+
+    private string? HandleTileInteractionRequest(ClientSession session, TileInteractionRequestPacket packet)
+    {
+        Console.WriteLine(
+            $"Session {session.SessionId}: Decoded TileInteractionRequest: Position={packet.Position}");
+
+        if (session.PlayerId is null)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Interaction rejected: client is not logged in."));
+        }
+
+        if (!_players.TryGetValue(session.PlayerId.Value, out PlayerState? player))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Interaction rejected: player state was not found."));
+        }
+
+        if (!IsAdjacentOrSameTile(player.Position, packet.Position))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket(
+                    $"Interaction rejected: target {packet.Position} is too far away from {player.Position}."));
+        }
+
+        if (!_worldMap.TryGetTileId(packet.Position, out int currentTileId))
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Interaction rejected: tile {packet.Position} is not loaded."));
+        }
+
+        if (currentTileId == GrassTileId)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("There is nothing useful to interact with on that grass tile."));
+        }
+
+        int newTileId = currentTileId switch
+        {
+            WallTileId => GrassTileId,
+            WaterTileId => GrassTileId,
+            _ => currentTileId
+        };
+
+        if (newTileId == currentTileId)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Interaction rejected: no rule exists for tile ID {currentTileId}."));
+        }
+
+        bool changed = _worldMap.TrySetTileId(packet.Position, newTileId);
+
+        if (!changed)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Interaction rejected: failed to update tile {packet.Position}."));
+        }
+
+        TileChangedPacket changedPacket = new TileChangedPacket(
+            packet.Position,
+            newTileId);
+
+        string changedJson = PacketSerializer.Serialize(PacketType.TileChanged, changedPacket);
+
+        BroadcastToLoggedInSessions(changedJson);
+
+        Console.WriteLine(
+            $"Interaction changed tile at {packet.Position} from TileId={currentTileId} to TileId={newTileId}.");
+
+        return null;
+    }
+
+    private static bool IsAdjacentOrSameTile(TilePosition playerPosition, TilePosition targetPosition)
+    {
+        if (playerPosition.Z != targetPosition.Z)
+        {
+            return false;
+        }
+
+        int deltaX = Math.Abs(playerPosition.X - targetPosition.X);
+        int deltaY = Math.Abs(playerPosition.Y - targetPosition.Y);
+
+        return deltaX + deltaY <= 1;
+    }
+
+    private string? HandleTileChangeRequest(ClientSession session, TileChangeRequestPacket packet)
+    {
+        Console.WriteLine(
+            $"Session {session.SessionId}: Decoded TileChangeRequest: Position={packet.Position}, TileId={packet.TileId}");
+
+        if (session.PlayerId is null)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Tile change rejected: client is not logged in."));
+        }
+
+        bool tileIdExists = _tileDefinitions.Any(tile => tile.TileId == packet.TileId);
+
+        if (!tileIdExists)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Tile change rejected: unknown tile ID {packet.TileId}."));
+        }
+
+        bool changed = _worldMap.TrySetTileId(packet.Position, packet.TileId);
+
+        if (!changed)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Tile change rejected: position {packet.Position} is not loaded."));
+        }
+
+        TileChangedPacket changedPacket = new TileChangedPacket(
+            packet.Position,
+            packet.TileId);
+
+        string changedJson = PacketSerializer.Serialize(PacketType.TileChanged, changedPacket);
+
+        BroadcastToLoggedInSessions(changedJson);
+
+        Console.WriteLine(
+            $"Tile changed at {packet.Position} to TileId={packet.TileId}. Broadcast sent.");
+
+        return null;
+    }
 
     private string HandleTileDefinitionsRequest(ClientSession session)
     {
@@ -706,10 +885,15 @@ public sealed class GameServer
         // First, tell this new client about itself/login.
         session.SendRaw(loginResultJson);
 
+        // Then, tell the client what tile IDs mean.
         SendTileDefinitionsToSession(session);
+
+        // Then, send the chunk that contains the player's spawn position.
+        SendSpawnChunkToSession(session, player.Position);
 
         // Then, tell the new client about already-existing players.
         SendExistingEntitiesToSession(session, player.PlayerId);
+
         // Finally, tell everyone else about the new player.
         BroadcastEntitySpawned(player, excludeSessionId: session.SessionId);
 
@@ -770,15 +954,40 @@ public sealed class GameServer
 
         return null;
     }
-    private static Chunk CreateFilledChunk(int chunkX, int chunkY, int tileId)
+    private static Chunk CreateFilledChunk(int chunkX, int chunkY, int grassTileId)
     {
-        Chunk chunk = new Chunk(chunkX, chunkY);
+        const int height = 1;
 
-        for (int x = 0; x < Chunk.Size; x++)
+        Chunk chunk = new Chunk(chunkX, chunkY, 0, height);
+
+        for (int localY = 0; localY < Chunk.Size; localY++)
         {
-            for (int y = 0; y < Chunk.Size; y++)
+            for (int localX = 0; localX < Chunk.Size; localX++)
             {
-                chunk.SetTileId(x, y, tileId);
+                int worldX = chunkX * Chunk.Size + localX;
+                int worldY = chunkY * Chunk.Size + localY;
+
+                int tileId = grassTileId;
+
+                // Horizontal water strip across the world.
+                if (worldY == 4 && worldX >= -20 && worldX <= 20)
+                {
+                    tileId = 2;
+                }
+
+                // Vertical wall strip across the world.
+                if (worldX == 5 && worldY >= -10 && worldY <= 10)
+                {
+                    tileId = 3;
+                }
+
+                // Keep the immediate spawn area clear and walkable.
+                if (worldX >= -1 && worldX <= 1 && worldY >= -1 && worldY <= 1)
+                {
+                    tileId = grassTileId;
+                }
+
+                chunk.SetTileId(localX, localY, tileId);
             }
         }
 
