@@ -336,6 +336,10 @@ public sealed class GameServer
                     session,
                     PacketSerializer.DeserializePayload<WhisperMessagePacket>(packet)),
 
+                PacketType.ChunkRequest => HandleChunkRequest(
+                    session,
+                    PacketSerializer.DeserializePayload<ChunkRequestPacket>(packet)),
+
                 _ => PacketSerializer.Serialize(
                     PacketType.ServerMessage,
                     new ServerMessagePacket($"Unhandled packet type: {packet.Type}"))
@@ -348,6 +352,33 @@ public sealed class GameServer
                 new ServerMessagePacket($"Server failed to process packet: {ex.Message}"));
         }
     }    
+
+    private string HandleChunkRequest(ClientSession session, ChunkRequestPacket packet)
+    {
+        Console.WriteLine($"Session {session.SessionId}: Decoded ChunkRequest: {packet.ChunkPosition}");
+
+        if (session.PlayerId is null)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket("Chunk request rejected: client is not logged in."));
+        }
+
+        if (!_worldMap.TryGetChunk(packet.ChunkPosition, out Chunk? chunk) || chunk is null)
+        {
+            return PacketSerializer.Serialize(
+                PacketType.ServerMessage,
+                new ServerMessagePacket($"Chunk request rejected: chunk {packet.ChunkPosition} is not loaded."));
+        }
+
+        ChunkDataPacket chunkData = new ChunkDataPacket(
+            packet.ChunkPosition,
+            Chunk.Size,
+            chunk.Height,
+            chunk.ToFlatTileIdArray());
+
+        return PacketSerializer.Serialize(PacketType.ChunkData, chunkData);
+    }
     
     private bool TryGetSessionByPlayerId(Guid playerId, out ClientSession? targetSession)
     {

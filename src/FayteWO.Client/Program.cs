@@ -102,6 +102,13 @@ try
             case "pm":
                 HandleWhisperCommand(parts);
                 break;
+            case "map":
+                client.RequestCurrentChunk();
+                break;
+
+            case "localmap":
+                client.PrintMapAroundPlayer();
+                break;
             default:
                 Console.WriteLine($"Unknown command: {command}");
                 Console.WriteLine("Type 'help' for available commands.");
@@ -229,5 +236,7 @@ void PrintHelp()
     Console.WriteLine("  entities      Print known entities");
     Console.WriteLine("  whisper <user> <message>  Send private message");
     Console.WriteLine("  say <message>  Send chat message");
+    Console.WriteLine("  map           Request and print current chunk map");
+    Console.WriteLine("  localmap      Print map using already-known chunk data");
     Console.WriteLine("  quit          Exit client");
 }

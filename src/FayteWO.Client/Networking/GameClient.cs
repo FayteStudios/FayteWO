@@ -15,7 +15,7 @@ public sealed class GameClient
     private readonly object _sendLock = new();
     private readonly ConcurrentDictionary<Guid, ClientEntity> _entities = new();
     public IReadOnlyCollection<ClientEntity> Entities => _entities.Values.ToArray();
-    
+    private readonly ConcurrentDictionary<ChunkPosition, ChunkDataPacket> _chunks = new();
     private TcpClient? _client;
     private StreamReader? _reader;
     private StreamWriter? _writer;
@@ -34,6 +34,25 @@ public sealed class GameClient
 
         _host = host;
         _port = port;
+    }
+
+    public void RequestCurrentChunk()
+    {
+        if (PlayerId is null || Position is null)
+        {
+            Console.WriteLine("Cannot request chunk before login.");
+            return;
+        }
+
+        ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(Position.Value);
+
+        ChunkRequestPacket request = new ChunkRequestPacket(chunkPosition);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.ChunkRequest, request);
+
+        Console.WriteLine();
+        Console.WriteLine($"Requesting chunk {chunkPosition}");
+
+        SendRaw(outgoingJson);
     }
 
     public void Connect()
@@ -213,10 +232,120 @@ public sealed class GameClient
             case PacketType.WhisperReceived:
                 HandleWhisperReceived(responsePacket);
                 break;
+            case PacketType.ChunkData:
+                HandleChunkData(responsePacket);
+                break;
             default:
                 Console.WriteLine($"Unhandled response packet type: {responsePacket.Type}");
                 break;
         }
+    }
+
+    private void HandleChunkData(NetworkPacket responsePacket)
+    {
+        ChunkDataPacket chunkData = PacketSerializer.DeserializePayload<ChunkDataPacket>(responsePacket);
+
+        _chunks[chunkData.ChunkPosition] = chunkData;
+
+        Console.WriteLine($"Received chunk {chunkData.ChunkPosition} with {chunkData.TileIds.Length} tiles.");
+
+        PrintMapAroundPlayer(radius: 8);
+    }
+
+    public void PrintMapAroundPlayer(int radius = 8)
+    {
+        if (Position is null)
+        {
+            Console.WriteLine("Cannot print map before login.");
+            return;
+        }
+
+        TilePosition center = Position.Value;
+
+        Console.WriteLine();
+        Console.WriteLine($"Map around {center}:");
+
+        for (int y = center.Y - radius; y <= center.Y + radius; y++)
+        {
+            for (int x = center.X - radius; x <= center.X + radius; x++)
+            {
+                TilePosition position = new TilePosition(x, y, center.Z);
+
+                if (position == center)
+                {
+                    Console.Write('@');
+                    continue;
+                }
+
+                ClientEntity? entityAtPosition = _entities.Values
+                    .FirstOrDefault(entity => entity.EntityId != PlayerId && entity.Position == position);
+
+                if (entityAtPosition is not null)
+                {
+                    Console.Write('P');
+                    continue;
+                }
+
+                if (TryGetKnownTileId(position, out int tileId))
+                {
+                    Console.Write(TileIdToAscii(tileId));
+                }
+                else
+                {
+                    Console.Write('?');
+                }
+            }
+
+            Console.WriteLine();
+        }
+    }
+
+    private bool TryGetKnownTileId(TilePosition worldPosition, out int tileId)
+    {
+        tileId = 0;
+
+        ChunkPosition chunkPosition = ChunkPosition.FromWorldPosition(worldPosition);
+
+        if (!_chunks.TryGetValue(chunkPosition, out ChunkDataPacket? chunkData))
+        {
+            return false;
+        }
+
+        int localX = Chunk.WorldToLocalCoordinate(worldPosition.X);
+        int localY = Chunk.WorldToLocalCoordinate(worldPosition.Y);
+        int localZ = worldPosition.Z - chunkData.ChunkPosition.Z;
+
+        if (localX < 0 ||
+            localX >= chunkData.Size ||
+            localY < 0 ||
+            localY >= chunkData.Size ||
+            localZ < 0 ||
+            localZ >= chunkData.Height)
+        {
+            return false;
+        }
+
+        int index = (localZ * chunkData.Size * chunkData.Size) +
+                    (localY * chunkData.Size) +
+                    localX;
+
+        if (index < 0 || index >= chunkData.TileIds.Length)
+        {
+            return false;
+        }
+
+        tileId = chunkData.TileIds[index];
+        return true;
+    }
+
+    private static char TileIdToAscii(int tileId)
+    {
+        return tileId switch
+        {
+            1 => '.',
+            2 => '#',
+            _ => '?'
+        };
     }
 
     private static void HandleWhisperReceived(NetworkPacket responsePacket)

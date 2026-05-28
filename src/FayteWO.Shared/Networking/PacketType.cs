@@ -9,6 +9,7 @@ public enum PacketType
     MoveRequest = 101,
     ChatMessage = 102,
     WhisperMessage = 103,
+    ChunkRequest = 104,
 
     // Server to client
     LoginResult = 200,
