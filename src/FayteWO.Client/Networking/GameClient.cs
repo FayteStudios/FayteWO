@@ -98,6 +98,10 @@ public sealed class GameClient
             Console.WriteLine("Selected tile info: tile is not loaded locally.");
         }
     }
+    public TilePosition? GetSelectedTilePosition()
+    {
+        return _selectedTilePosition;
+    }
 
     public void SendTileInteractionRequestForSelectedTarget()
     {
@@ -108,6 +112,11 @@ public sealed class GameClient
         }
 
         SendTileInteractionRequest(_selectedTilePosition.Value);
+    }
+
+    public void InteractWithSelectedTile()
+    {
+        SendTileInteractionRequestForSelectedTarget();
     }
 
     public void RequestTileDefinitions()
@@ -681,6 +690,15 @@ public sealed class GameClient
 
         return '?';
     }
+    public TileDefinitionDto? GetTileDefinition(int tileId)
+    {
+        if (_tileDefinitions.TryGetValue(tileId, out TileDefinitionDto? tileDefinition))
+        {
+            return tileDefinition;
+        }
+
+        return null;
+    }
 
     private static void HandleWhisperReceived(NetworkPacket responsePacket)
     {
@@ -771,6 +789,10 @@ public sealed class GameClient
 
         SendRaw(outgoingJson);
     }
+    public IReadOnlyList<ChunkDataPacket> GetLoadedChunksSnapshot()
+    {
+        return _chunks.Values.ToArray();
+    }
 
     public void PrintKnownEntities()
     {
@@ -840,28 +862,6 @@ public sealed class GameClient
 
             RequestChunksAround(moved.ToPosition);
         }
-    }
-
-    public IReadOnlyList<ChunkDataPacket> GetLoadedChunksSnapshot()
-    {
-        return _chunks.Values.ToArray();
-    }
-    public TilePosition? GetSelectedTilePosition()
-    {
-        return _selectedTilePosition;
-    }
-    public TileDefinitionDto? GetTileDefinition(int tileId)
-    {
-        if (_tileDefinitions.TryGetValue(tileId, out TileDefinitionDto? tileDefinition))
-        {
-            return tileDefinition;
-        }
-
-        return null;
-    }
-    public void InteractWithSelectedTile()
-    {
-        SendTileInteractionRequestForSelectedTarget();
     }
     private static void HandleServerMessage(NetworkPacket responsePacket)
     {

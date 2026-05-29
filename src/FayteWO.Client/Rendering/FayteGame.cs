@@ -5,6 +5,11 @@ using FayteWO.Shared.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using XnaColor = Microsoft.Xna.Framework.Color;
+using XnaPoint = Microsoft.Xna.Framework.Point;
+using XnaRectangle = Microsoft.Xna.Framework.Rectangle;
+using XnaKeys = Microsoft.Xna.Framework.Input.Keys;
+using XnaButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 
 namespace FayteWO.Client.Rendering;
 
@@ -43,7 +48,7 @@ public sealed class FayteGame : Game
         _spriteBatch = new SpriteBatch(GraphicsDevice);
 
         _whitePixel = new Texture2D(GraphicsDevice, 1, 1);
-        _whitePixel.SetData(new[] { Color.White });
+        _whitePixel.SetData(new[] { XnaColor.White });
     }
 
     protected override void Update(GameTime gameTime)
@@ -51,7 +56,7 @@ public sealed class FayteGame : Game
         KeyboardState keyboardState = Keyboard.GetState();
         MouseState mouseState = Mouse.GetState();
 
-        if (keyboardState.IsKeyDown(Keys.Escape))
+        if (keyboardState.IsKeyDown(XnaKeys.Escape))
         {
             Exit();
             return;
@@ -68,7 +73,7 @@ public sealed class FayteGame : Game
 
     protected override void Draw(GameTime gameTime)
     {
-        GraphicsDevice.Clear(Color.Black);
+        GraphicsDevice.Clear(XnaColor.Black);
 
         if (_spriteBatch is null || _whitePixel is null)
         {
@@ -87,27 +92,27 @@ public sealed class FayteGame : Game
 
     private void HandleKeyboardInput(KeyboardState keyboardState)
     {
-        if (WasKeyPressed(keyboardState, Keys.W) || WasKeyPressed(keyboardState, Keys.Up))
+        if (WasKeyPressed(keyboardState, XnaKeys.W) || WasKeyPressed(keyboardState, XnaKeys.Up))
         {
             _client.SendMoveRequest(Direction.North);
         }
 
-        if (WasKeyPressed(keyboardState, Keys.D) || WasKeyPressed(keyboardState, Keys.Right))
+        if (WasKeyPressed(keyboardState, XnaKeys.D) || WasKeyPressed(keyboardState, XnaKeys.Right))
         {
             _client.SendMoveRequest(Direction.East);
         }
 
-        if (WasKeyPressed(keyboardState, Keys.S) || WasKeyPressed(keyboardState, Keys.Down))
+        if (WasKeyPressed(keyboardState, XnaKeys.S) || WasKeyPressed(keyboardState, XnaKeys.Down))
         {
             _client.SendMoveRequest(Direction.South);
         }
 
-        if (WasKeyPressed(keyboardState, Keys.A) || WasKeyPressed(keyboardState, Keys.Left))
+        if (WasKeyPressed(keyboardState, XnaKeys.A) || WasKeyPressed(keyboardState, XnaKeys.Left))
         {
             _client.SendMoveRequest(Direction.West);
         }
 
-        if (WasKeyPressed(keyboardState, Keys.E))
+        if (WasKeyPressed(keyboardState, XnaKeys.E))
         {
             _client.InteractWithSelectedTile();
         }
@@ -121,12 +126,12 @@ public sealed class FayteGame : Game
         }
 
         bool leftClicked =
-            mouseState.LeftButton == ButtonState.Pressed &&
-            _previousMouseState.LeftButton == ButtonState.Released;
+            mouseState.LeftButton == XnaButtonState.Pressed &&
+            _previousMouseState.LeftButton == XnaButtonState.Released;
 
         bool rightClicked =
-            mouseState.RightButton == ButtonState.Pressed &&
-            _previousMouseState.RightButton == ButtonState.Released;
+            mouseState.RightButton == XnaButtonState.Pressed &&
+            _previousMouseState.RightButton == XnaButtonState.Released;
 
         if (!leftClicked && !rightClicked)
         {
@@ -168,9 +173,9 @@ public sealed class FayteGame : Game
 
                 TilePosition worldPosition = new TilePosition(worldX, worldY, playerPosition.Z);
 
-                Color tileColor = GetTileColor(worldPosition);
+                XnaColor tileColor = GetTileColor(worldPosition);
 
-                Rectangle destination = new Rectangle(
+                XnaRectangle destination = new XnaRectangle(
                     screenX * TileSize,
                     screenY * TileSize,
                     TileSize,
@@ -186,17 +191,17 @@ public sealed class FayteGame : Game
 
         if (selectedTile is not null && selectedTile.Value.Z == playerPosition.Z)
         {
-            Point? selectedScreenTile = WorldToScreenTile(selectedTile.Value);
+            XnaPoint? selectedScreenTile = WorldToScreenTile(selectedTile.Value);
 
             if (selectedScreenTile is not null)
             {
-                Rectangle selectedRectangle = new Rectangle(
+                XnaRectangle selectedRectangle = new XnaRectangle(
                     selectedScreenTile.Value.X * TileSize,
                     selectedScreenTile.Value.Y * TileSize,
                     TileSize,
                     TileSize);
 
-                DrawRectangleOutline(selectedRectangle, Color.Yellow, 3);
+                DrawRectangleOutline(selectedRectangle, XnaColor.Yellow, 3);
             }
         }
     }
@@ -208,17 +213,17 @@ public sealed class FayteGame : Game
             return;
         }
 
-        Point? playerScreenTile = WorldToScreenTile(_client.Position.Value);
+        XnaPoint? playerScreenTile = WorldToScreenTile(_client.Position.Value);
 
         if (playerScreenTile is not null)
         {
-            Rectangle playerRectangle = new Rectangle(
+            XnaRectangle playerRectangle = new XnaRectangle(
                 playerScreenTile.Value.X * TileSize + 6,
                 playerScreenTile.Value.Y * TileSize + 6,
                 TileSize - 12,
                 TileSize - 12);
 
-            _spriteBatch.Draw(_whitePixel, playerRectangle, Color.Red);
+            _spriteBatch.Draw(_whitePixel, playerRectangle, XnaColor.Red);
         }
 
         foreach (ClientEntity entity in _client.Entities)
@@ -228,24 +233,24 @@ public sealed class FayteGame : Game
                 continue;
             }
 
-            Point? entityScreenTile = WorldToScreenTile(entity.Position);
+            XnaPoint? entityScreenTile = WorldToScreenTile(entity.Position);
 
             if (entityScreenTile is null)
             {
                 continue;
             }
 
-            Rectangle entityRectangle = new Rectangle(
+            XnaRectangle entityRectangle = new XnaRectangle(
                 entityScreenTile.Value.X * TileSize + 8,
                 entityScreenTile.Value.Y * TileSize + 8,
                 TileSize - 16,
                 TileSize - 16);
 
-            _spriteBatch.Draw(_whitePixel, entityRectangle, Color.Orange);
+            _spriteBatch.Draw(_whitePixel, entityRectangle, XnaColor.Orange);
         }
     }
 
-    private Color GetTileColor(TilePosition worldPosition)
+    private XnaColor GetTileColor(TilePosition worldPosition)
     {
         foreach (ChunkDataPacket chunk in _client.GetLoadedChunksSnapshot())
         {
@@ -265,7 +270,7 @@ public sealed class FayteGame : Game
                 localZ < 0 ||
                 localZ >= chunk.Height)
             {
-                return Color.Magenta;
+                return XnaColor.Magenta;
             }
 
             int index = (localZ * chunk.Size * chunk.Size) +
@@ -274,24 +279,24 @@ public sealed class FayteGame : Game
 
             if (index < 0 || index >= chunk.TileIds.Length)
             {
-                return Color.Magenta;
+                return XnaColor.Magenta;
             }
 
             int tileId = chunk.TileIds[index];
             return TileIdToColor(tileId);
         }
 
-        return Color.DarkSlateGray;
+        return XnaColor.DarkSlateGray;
     }
 
-    private static Color TileIdToColor(int tileId)
+    private static XnaColor TileIdToColor(int tileId)
     {
         return tileId switch
         {
-            1 => Color.ForestGreen,
-            2 => Color.Gray,
-            3 => Color.DodgerBlue,
-            _ => Color.Magenta
+            1 => XnaColor.ForestGreen,
+            2 => XnaColor.Gray,
+            3 => XnaColor.DodgerBlue,
+            _ => XnaColor.Magenta
         };
     }
 
@@ -324,7 +329,7 @@ public sealed class FayteGame : Game
             playerPosition.Z);
     }
 
-    private Point? WorldToScreenTile(TilePosition worldPosition)
+    private XnaPoint? WorldToScreenTile(TilePosition worldPosition)
     {
         if (_client.Position is null)
         {
@@ -347,16 +352,16 @@ public sealed class FayteGame : Game
             return null;
         }
 
-        return new Point(screenX, screenY);
+        return new XnaPoint(screenX, screenY);
     }
 
-    private bool WasKeyPressed(KeyboardState currentKeyboardState, Keys key)
+    private bool WasKeyPressed(KeyboardState currentKeyboardState, XnaKeys key)
     {
         return currentKeyboardState.IsKeyDown(key) &&
                !_previousKeyboardState.IsKeyDown(key);
     }
 
-    private void DrawGridLine(Rectangle rectangle)
+    private void DrawGridLine(XnaRectangle rectangle)
     {
         if (_spriteBatch is null || _whitePixel is null)
         {
@@ -365,16 +370,16 @@ public sealed class FayteGame : Game
 
         _spriteBatch.Draw(
             _whitePixel,
-            new Rectangle(rectangle.X, rectangle.Y, rectangle.Width, 1),
-            Color.Black * 0.25f);
+            new XnaRectangle(rectangle.X, rectangle.Y, rectangle.Width, 1),
+            XnaColor.Black * 0.25f);
 
         _spriteBatch.Draw(
             _whitePixel,
-            new Rectangle(rectangle.X, rectangle.Y, 1, rectangle.Height),
-            Color.Black * 0.25f);
+            new XnaRectangle(rectangle.X, rectangle.Y, 1, rectangle.Height),
+            XnaColor.Black * 0.25f);
     }
 
-    private void DrawRectangleOutline(Rectangle rectangle, Color color, int thickness)
+    private void DrawRectangleOutline(XnaRectangle rectangle, XnaColor color, int thickness)
     {
         if (_spriteBatch is null || _whitePixel is null)
         {
@@ -383,22 +388,22 @@ public sealed class FayteGame : Game
 
         _spriteBatch.Draw(
             _whitePixel,
-            new Rectangle(rectangle.X, rectangle.Y, rectangle.Width, thickness),
+            new XnaRectangle(rectangle.X, rectangle.Y, rectangle.Width, thickness),
             color);
 
         _spriteBatch.Draw(
             _whitePixel,
-            new Rectangle(rectangle.X, rectangle.Bottom - thickness, rectangle.Width, thickness),
+            new XnaRectangle(rectangle.X, rectangle.Bottom - thickness, rectangle.Width, thickness),
             color);
 
         _spriteBatch.Draw(
             _whitePixel,
-            new Rectangle(rectangle.X, rectangle.Y, thickness, rectangle.Height),
+            new XnaRectangle(rectangle.X, rectangle.Y, thickness, rectangle.Height),
             color);
 
         _spriteBatch.Draw(
             _whitePixel,
-            new Rectangle(rectangle.Right - thickness, rectangle.Y, thickness, rectangle.Height),
+            new XnaRectangle(rectangle.Right - thickness, rectangle.Y, thickness, rectangle.Height),
             color);
     }
 }

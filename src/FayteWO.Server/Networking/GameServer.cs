@@ -216,6 +216,11 @@ public sealed class GameServer
                     PrintSessions();
                     break;
 
+                case "guistatus":
+                case "gs":
+                    PrintGuiStatus();
+                    break;
+
                 case "announce":
                 case "a":
                     HandleAnnounceCommand(parts);
@@ -233,6 +238,18 @@ public sealed class GameServer
                     Console.WriteLine("Type 'help' for available commands.");
                     break;
             }
+        }
+    }
+
+    private void PrintSessions()
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Active sessions: {_sessions.Count}");
+
+        foreach (ClientSession session in _sessions.Values)
+        {
+            string playerText = session.PlayerId?.ToString() ?? "not logged in";
+            Console.WriteLine($"  Session {session.SessionId} | Player: {playerText}");
         }
     }
 
@@ -272,6 +289,7 @@ public sealed class GameServer
         Console.WriteLine("Server commands:");
         Console.WriteLine("  players               List online players");
         Console.WriteLine("  sessions              List active client sessions");
+        Console.WriteLine("  guistatus             Print GUI-readable player/session status");
         Console.WriteLine("  announce <message>    Send a message to all logged-in clients");
         Console.WriteLine("  help                  Show server commands");
         Console.WriteLine("  stop                  Stop the server");
@@ -288,16 +306,34 @@ public sealed class GameServer
         }
     }
 
-    private void PrintSessions()
+    private void PrintGuiStatus()
     {
-        Console.WriteLine();
-        Console.WriteLine($"Active sessions: {_sessions.Count}");
+        Console.WriteLine("GUI_STATUS_BEGIN");
 
-        foreach (ClientSession session in _sessions.Values)
+        Console.WriteLine($"PLAYERS|{_players.Count}");
+
+        foreach (PlayerState player in _players.Values.OrderBy(player => player.Name))
         {
-            string playerText = session.PlayerId?.ToString() ?? "not logged in";
-            Console.WriteLine($"  Session {session.SessionId} | Player: {playerText}");
+            Console.WriteLine(
+                $"PLAYER|{EscapeGuiStatusValue(player.Name)}|{player.PlayerId}|{player.Position.X}|{player.Position.Y}|{player.Position.Z}");
         }
+
+        Console.WriteLine($"SESSIONS|{_sessions.Count}");
+
+        foreach (ClientSession session in _sessions.Values.OrderBy(session => session.SessionId))
+        {
+            string playerId = session.PlayerId?.ToString() ?? "";
+            Console.WriteLine($"SESSION|{session.SessionId}|{playerId}|{session.IsLoggedIn}");
+        }
+
+        Console.WriteLine("GUI_STATUS_END");
+    }
+
+    private static string EscapeGuiStatusValue(string value)
+    {
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("|", "\\p");
     }
 
     private void Stop()

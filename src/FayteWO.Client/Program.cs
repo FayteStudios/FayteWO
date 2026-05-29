@@ -1,56 +1,68 @@
-﻿using FayteWO.Client.Networking;
+﻿using System.Windows.Forms;
+using FayteWO.Client.Login;
+using FayteWO.Client.Networking;
 using FayteWO.Client.Rendering;
 
-const string host = "127.0.0.1";
-const int port = 7777;
+namespace FayteWO.Client;
 
-Console.WriteLine("FayteWO Client Starting...");
-
-string username = PromptForUsername();
-
-GameClient client = new GameClient(host, port);
-
-try
+internal static class Program
 {
-    client.Connect();
-    client.Login(username, "password");
+    private const string Host = "127.0.0.1";
+    private const int Port = 7777;
 
-    Console.WriteLine("Waiting for login response...");
-
-    while (client.PlayerId is null)
+    [STAThread]
+    private static void Main()
     {
-        Thread.Sleep(50);
-    }
+        ApplicationConfiguration.Initialize();
 
-    Console.WriteLine("Login complete.");
-    Console.WriteLine("Opening FayteWO visual client.");
-    Console.WriteLine("Controls:");
-    Console.WriteLine("  WASD / Arrow Keys = move");
-    Console.WriteLine("  Left Click        = select tile");
-    Console.WriteLine("  Right Click       = select and interact");
-    Console.WriteLine("  E                 = interact with selected tile");
-    Console.WriteLine("  Escape            = close window");
+        using LoginForm loginForm = new LoginForm();
 
-    using FayteGame game = new FayteGame(client);
-    game.Run();
-}
-finally
-{
-    client.Disconnect();
-}
+        DialogResult loginResult = loginForm.ShowDialog();
 
-static string PromptForUsername()
-{
-    while (true)
-    {
-        Console.Write("Username: ");
-        string? username = Console.ReadLine();
-
-        if (!string.IsNullOrWhiteSpace(username))
+        if (loginResult != DialogResult.OK)
         {
-            return username.Trim();
+            return;
         }
 
-        Console.WriteLine("Username cannot be empty.");
+        GameClient client = new GameClient(Host, Port);
+
+        try
+        {
+            client.Connect();
+            client.Login(loginForm.GetUsername(), "password");
+
+            WaitForLogin(client);
+
+            using FayteGame game = new FayteGame(client);
+            game.Run();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Unable to start FayteWO client.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "FayteWO Client Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            client.Disconnect();
+        }
+    }
+
+    private static void WaitForLogin(GameClient client)
+    {
+        DateTime timeoutAt = DateTime.UtcNow.AddSeconds(5);
+
+        while (client.PlayerId is null)
+        {
+            Application.DoEvents();
+            Thread.Sleep(25);
+
+            if (DateTime.UtcNow >= timeoutAt)
+            {
+                throw new TimeoutException("Login timed out. Make sure the server is running.");
+            }
+        }
     }
 }
